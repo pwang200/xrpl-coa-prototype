@@ -22,6 +22,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use crate::proposal::Proposal;
 
 /// The default channel capacity for each channel of the primary.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -55,6 +56,19 @@ pub enum WorkerPrimaryMessage {
     OthersBatch(Digest, WorkerId),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PrimaryConsensusMessage {
+    Timeout,
+    OwnBatch((Digest, WorkerId)),
+    Proposal(Proposal)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ConsensusPrimaryMessage {
+    Proposal(Proposal),
+    SyncBatches(Vec<(Digest, WorkerId)>, PublicKey)
+}
+
 pub struct Primary;
 
 impl Primary {
@@ -65,6 +79,8 @@ impl Primary {
         store: Store,
         tx_consensus: Sender<Certificate>,
         rx_consensus: Receiver<Certificate>,
+        tx_primary_consensus: Sender<PrimaryConsensusMessage>,
+        rx_consensus_primary: Receiver<ConsensusPrimaryMessage>
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel(CHANNEL_CAPACITY);
@@ -126,7 +142,7 @@ impl Primary {
             name, address
         );
 
-        // The `Synchronizer` provides auxiliary methods helping to `Core` to sync.
+        // The `Synchronizer` provides auxiliary methods helping `Core` to sync.
         let synchronizer = Synchronizer::new(
             name,
             &committee,

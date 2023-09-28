@@ -12,10 +12,11 @@ mod payload_receiver;
 mod primary;
 mod proposer;
 mod synchronizer;
+pub mod proposal;
 
 #[cfg(test)]
 #[path = "tests/common.rs"]
 mod common;
 
 pub use crate::messages::{Certificate, Header};
-pub use crate::primary::{Primary, PrimaryWorkerMessage, Round, WorkerPrimaryMessage};
+pub use crate::primary::{Primary, PrimaryWorkerMessage, Round, WorkerPrimaryMessage, PrimaryConsensusMessage, ConsensusPrimaryMessage};

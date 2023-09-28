@@ -10,6 +10,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
+use xrpl_consensus_core::LedgerId;
 
 #[cfg(test)]
 #[path = "tests/crypto_tests.rs"]
@@ -18,7 +19,7 @@ pub mod crypto_tests;
 pub type CryptoError = ed25519::Error;
 
 /// Represents a hash digest (32 bytes).
-#[derive(Hash, PartialEq, Default, Eq, Clone, Deserialize, Serialize, Ord, PartialOrd)]
+#[derive(Hash, PartialEq, Default, Eq, Clone, Copy, Deserialize, Serialize, Ord, PartialOrd)]
 pub struct Digest(pub [u8; 32]);
 
 impl Digest {
@@ -29,6 +30,10 @@ impl Digest {
     pub fn size(&self) -> usize {
         self.0.len()
     }
+}
+
+impl LedgerId for Digest {
+
 }
 
 impl fmt::Debug for Digest {
