@@ -1,10 +1,13 @@
 use std::fmt::{Display, Formatter};
-use xrpl_consensus_core::{LedgerId, LedgerIndex};
+use serde::{Deserialize, Serialize};
+
+use xrpl_consensus_core::LedgerIndex;
+
 use crypto::Digest;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 pub struct Ledger {
-
+  // TODO
 }
 
 impl Display for Ledger {

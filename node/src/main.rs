@@ -1,3 +1,4 @@
+use std::sync::{Arc, RwLock};
 // Copyright(C) Facebook, Inc. and its affiliates.
 use anyhow::{Context, Result};
 use clap::{crate_name, crate_version, App, AppSettings, ArgMatches, SubCommand};
@@ -9,6 +10,8 @@ use env_logger::Env;
 use primary::{Certificate, Primary};
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
+use xrpl_consensus_core::WallNetClock;
+use consensus::adaptor::ValidationsAdaptor;
 use worker::Worker;
 
 /// The default channel capacity.
@@ -109,8 +112,12 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 tx_primary_consensus,
                 rx_consensus_primary
             );
+            let adaptor = ValidationsAdaptor::new();
+            let clock = Arc::new(RwLock::new(WallNetClock));
             Consensus::spawn(
                 committee,
+                adaptor,
+                clock,
                 rx_primary_consensus,
                 tx_consensus_primary
             );

@@ -22,6 +22,8 @@ crypto = { path = "../crypto" }
 primary = { path = "../primary" }
 worker = { path = "../worker" }
 consensus = { path = "../consensus" }
+xrpl-consensus-core = { path = "../../xrpl-consensus-rs/xrpl-consensus-core" }
+xrpl-consensus-validations = { path = "../../xrpl-consensus-rs/xrpl-consensus-validations" }
 
 [features]
 benchmark = ["worker/benchmark", "primary/benchmark", "consensus/benchmark"]

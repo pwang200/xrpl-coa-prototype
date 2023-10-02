@@ -22,6 +22,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use xrpl_consensus_core::LedgerIndex;
+use crate::Ledger;
 use crate::proposal::Proposal;
 
 /// The default channel capacity for each channel of the primary.
@@ -66,7 +68,8 @@ pub enum PrimaryConsensusMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ConsensusPrimaryMessage {
     Proposal(Proposal),
-    SyncBatches(Vec<(Digest, WorkerId)>, PublicKey)
+    SyncBatches(Vec<(Digest, WorkerId)>, PublicKey),
+    SyncLedger(Digest, LedgerIndex)
 }
 
 pub struct Primary;
