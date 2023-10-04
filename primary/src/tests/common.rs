@@ -106,7 +106,7 @@ pub fn header() -> Header {
     };
     Header {
         id: header.digest(),
-        signature: Signature::new(&header.digest(), &secret),
+        signature: Signature::new_for_digest(&header.digest(), &secret),
         ..header
     }
 }
@@ -127,7 +127,7 @@ pub fn headers() -> Vec<Header> {
             };
             Header {
                 id: header.digest(),
-                signature: Signature::new(&header.digest(), &secret),
+                signature: Signature::new_for_digest(&header.digest(), &secret),
                 ..header
             }
         })
@@ -147,7 +147,7 @@ pub fn votes(header: &Header) -> Vec<Vote> {
                 signature: Signature::default(),
             };
             Vote {
-                signature: Signature::new(&vote.digest(), &secret),
+                signature: Signature::new_for_digest(&vote.digest(), &secret),
                 ..vote
             }
         })

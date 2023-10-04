@@ -14,6 +14,7 @@ mod proposer;
 mod synchronizer;
 pub mod proposal;
 mod ledger;
+mod validations;
 
 #[cfg(test)]
 #[path = "tests/common.rs"]
@@ -22,3 +23,4 @@ mod common;
 pub use crate::messages::{Certificate, Header};
 pub use crate::primary::{Primary, PrimaryWorkerMessage, Round, WorkerPrimaryMessage, PrimaryConsensusMessage, ConsensusPrimaryMessage};
 pub use crate::ledger::Ledger;
+pub use crate::validations::{SignedValidation, Validation};

@@ -23,8 +23,8 @@ use std::sync::Arc;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use xrpl_consensus_core::LedgerIndex;
-use crate::Ledger;
-use crate::proposal::Proposal;
+use crate::{Ledger, SignedValidation};
+use crate::proposal::SignedProposal;
 
 /// The default channel capacity for each channel of the primary.
 pub const CHANNEL_CAPACITY: usize = 1_000;
@@ -58,25 +58,26 @@ pub enum WorkerPrimaryMessage {
     OthersBatch(Digest, WorkerId),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum PrimaryConsensusMessage {
     Timeout,
-    OwnBatch((Digest, WorkerId)),
-    Proposal(Proposal)
+    Batch((Digest, WorkerId)),
+    Proposal(SignedProposal)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum ConsensusPrimaryMessage {
-    Proposal(Proposal),
-    SyncBatches(Vec<(Digest, WorkerId)>, PublicKey),
-    SyncLedger(Digest, LedgerIndex)
+    Proposal(Arc<SignedProposal>),
+    SyncLedger(Digest, LedgerIndex),
+    Validation(SignedValidation)
 }
 
 pub struct Primary;
 
 impl Primary {
     pub fn spawn(
-        keypair: KeyPair,
+        public_key: PublicKey,
+        signature_service: SignatureService,
         committee: Committee,
         parameters: Parameters,
         store: Store,
@@ -100,8 +101,7 @@ impl Primary {
         parameters.log();
 
         // Parse the public and secret key of this authority.
-        let name = keypair.name;
-        let secret = keypair.secret;
+        let name = public_key;
 
         // Atomic variable use to synchronizer all tasks with the latest consensus round. This is only
         // used for cleanup. The only tasks that write into this variable is `GarbageCollector`.
@@ -153,9 +153,6 @@ impl Primary {
             /* tx_header_waiter */ tx_sync_headers,
             /* tx_certificate_waiter */ tx_sync_certificates,
         );
-
-        // The `SignatureService` is used to require signatures on specific digests.
-        let signature_service = SignatureService::new(secret);
 
         // The `Core` receives and handles headers, votes, and certificates from the other primaries.
         Core::spawn(

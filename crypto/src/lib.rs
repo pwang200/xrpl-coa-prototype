@@ -1,6 +1,6 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use ed25519_dalek as dalek;
-use ed25519_dalek::ed25519;
+use ed25519_dalek::{Digest as DigestT, ed25519, Sha512};
 use ed25519_dalek::Signer as _;
 use rand::rngs::OsRng;
 use rand::{CryptoRng, RngCore};
@@ -64,6 +64,12 @@ impl TryFrom<&[u8]> for Digest {
 /// This trait is implemented by all messages that can be hashed.
 pub trait Hash {
     fn digest(&self) -> Digest;
+}
+
+impl Hash for &[u8] {
+    fn digest(&self) -> Digest {
+        Digest(Sha512::digest(self).as_slice()[..32].try_into().unwrap())
+    }
 }
 
 /// Represents a public key (in bytes).
@@ -180,19 +186,27 @@ where
 }
 
 /// Represents an ed25519 signature.
-#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+#[derive(Serialize, Deserialize, Copy, Clone, Default, Debug)]
 pub struct Signature {
     part1: [u8; 32],
     part2: [u8; 32],
 }
 
 impl Signature {
-    pub fn new(digest: &Digest, secret: &SecretKey) -> Self {
+    pub fn new(msg: Vec<u8>, secret: &SecretKey) -> Self {
         let keypair = dalek::Keypair::from_bytes(&secret.0).expect("Unable to load secret key");
-        let sig = keypair.sign(&digest.0).to_bytes();
+        let sig = keypair.sign(msg.as_slice()).to_bytes();
         let part1 = sig[..32].try_into().expect("Unexpected signature length");
         let part2 = sig[32..64].try_into().expect("Unexpected signature length");
         Signature { part1, part2 }
+    }
+    pub fn new_for_digest(digest: &Digest, secret: &SecretKey) -> Self {
+        Self::new(digest.to_vec(), secret)
+        /*let keypair = dalek::Keypair::from_bytes(&secret.0).expect("Unable to load secret key");
+        let sig = keypair.sign(&digest.0).to_bytes();
+        let part1 = sig[..32].try_into().expect("Unexpected signature length");
+        let part2 = sig[32..64].try_into().expect("Unexpected signature length");
+        Signature { part1, part2 }*/
     }
 
     fn flatten(&self) -> [u8; 64] {
@@ -206,6 +220,12 @@ impl Signature {
         let signature = ed25519::signature::Signature::from_bytes(&self.flatten())?;
         let key = dalek::PublicKey::from_bytes(&public_key.0)?;
         key.verify_strict(&digest.0, &signature)
+    }
+
+    pub fn verify_msg(&self, msg: &[u8], public_key: &PublicKey) -> Result<(), CryptoError> {
+        let signature = ed25519::signature::Signature::from_bytes(&self.flatten())?;
+        let key = dalek::PublicKey::from_bytes(&public_key.0)?;
+        key.verify_strict(msg, &signature)
     }
 
     pub fn verify_batch<'a, I>(digest: &Digest, votes: I) -> Result<(), CryptoError>
@@ -228,7 +248,7 @@ impl Signature {
 /// over the digest (through a oneshot channel).
 #[derive(Clone)]
 pub struct SignatureService {
-    channel: Sender<(Digest, oneshot::Sender<Signature>)>,
+    channel: Sender<(Vec<u8>, oneshot::Sender<Signature>)>,
 }
 
 impl SignatureService {
@@ -236,16 +256,26 @@ impl SignatureService {
         let (tx, mut rx): (Sender<(_, oneshot::Sender<_>)>, _) = channel(100);
         tokio::spawn(async move {
             while let Some((digest, sender)) = rx.recv().await {
-                let signature = Signature::new(&digest, &secret);
+                let signature = Signature::new(digest, &secret);
                 let _ = sender.send(signature);
             }
         });
         Self { channel: tx }
     }
 
+    pub async fn sign(&mut self, msg: Vec<u8>) -> Signature {
+        let (sender, receiver): (oneshot::Sender<_>, oneshot::Receiver<_>) = oneshot::channel();
+        if let Err(e) = self.channel.send((msg, sender)).await {
+            panic!("Failed to send message Signature Service: {}", e);
+        }
+        receiver
+            .await
+            .expect("Failed to receive signature from Signature Service")
+    }
+
     pub async fn request_signature(&mut self, digest: Digest) -> Signature {
         let (sender, receiver): (oneshot::Sender<_>, oneshot::Receiver<_>) = oneshot::channel();
-        if let Err(e) = self.channel.send((digest, sender)).await {
+        if let Err(e) = self.channel.send((digest.to_vec(), sender)).await {
             panic!("Failed to send message Signature Service: {}", e);
         }
         receiver

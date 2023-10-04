@@ -5,12 +5,6 @@ use ed25519_dalek::Sha512;
 use rand::rngs::StdRng;
 use rand::SeedableRng as _;
 
-impl Hash for &[u8] {
-    fn digest(&self) -> Digest {
-        Digest(Sha512::digest(self).as_slice()[..32].try_into().unwrap())
-    }
-}
-
 impl PartialEq for SecretKey {
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
@@ -54,7 +48,7 @@ fn verify_valid_signature() {
     // Make signature.
     let message: &[u8] = b"Hello, world!";
     let digest = message.digest();
-    let signature = Signature::new(&digest, &secret_key);
+    let signature = Signature::new_for_digest(&digest, &secret_key);
 
     // Verify the signature.
     assert!(signature.verify(&digest, &public_key).is_ok());
@@ -68,7 +62,7 @@ fn verify_invalid_signature() {
     // Make signature.
     let message: &[u8] = b"Hello, world!";
     let digest = message.digest();
-    let signature = Signature::new(&digest, &secret_key);
+    let signature = Signature::new_for_digest(&digest, &secret_key);
 
     // Verify the signature.
     let bad_message: &[u8] = b"Bad message!";
@@ -85,7 +79,7 @@ fn verify_valid_batch() {
     let signatures: Vec<_> = (0..3)
         .map(|_| {
             let (public_key, secret_key) = keys.pop().unwrap();
-            (public_key, Signature::new(&digest, &secret_key))
+            (public_key, Signature::new_for_digest(&digest, &secret_key))
         })
         .collect();
 
@@ -102,7 +96,7 @@ fn verify_invalid_batch() {
     let mut signatures: Vec<_> = (0..2)
         .map(|_| {
             let (public_key, secret_key) = keys.pop().unwrap();
-            (public_key, Signature::new(&digest, &secret_key))
+            (public_key, Signature::new_for_digest(&digest, &secret_key))
         })
         .collect();
 

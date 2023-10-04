@@ -1,8 +1,10 @@
 use std::time::SystemTime;
+
+use xrpl_consensus_core::{Ledger as LedgerTrait, WallNetClock};
 use xrpl_consensus_validations::Adaptor;
-use primary::Ledger;
-use xrpl_consensus_core::{Ledger as LedgerTrait, LedgerIndex, WallNetClock};
+
 use crypto::PublicKey;
+use primary::{Ledger, SignedValidation};
 
 pub struct ValidationsAdaptor {
 
@@ -15,7 +17,7 @@ impl ValidationsAdaptor {
 }
 
 impl Adaptor for ValidationsAdaptor {
-    type ValidationType = Validation;
+    type ValidationType = SignedValidation;
     type LedgerType = Ledger;
     type LedgerIdType = <Ledger as LedgerTrait>::IdType;
     type NodeIdType = PublicKey;
@@ -27,47 +29,6 @@ impl Adaptor for ValidationsAdaptor {
     }
 
     fn acquire(&mut self, ledger_id: &Self::LedgerIdType) -> Option<Self::LedgerType> {
-        todo!()
-    }
-}
-
-#[derive(Copy, Clone)]
-pub struct Validation {
-
-}
-
-impl xrpl_consensus_core::Validation for Validation {
-    type LedgerIdType = <Ledger as LedgerTrait>::IdType;
-
-    fn seq(&self) -> LedgerIndex {
-        todo!()
-    }
-
-    fn ledger_id(&self) -> Self::LedgerIdType {
-        todo!()
-    }
-
-    fn sign_time(&self) -> SystemTime {
-        todo!()
-    }
-
-    fn seen_time(&self) -> SystemTime {
-        todo!()
-    }
-
-    fn cookie(&self) -> u64 {
-        todo!()
-    }
-
-    fn trusted(&self) -> bool {
-        todo!()
-    }
-
-    fn full(&self) -> bool {
-        todo!()
-    }
-
-    fn load_fee(&self) -> Option<u32> {
         todo!()
     }
 }

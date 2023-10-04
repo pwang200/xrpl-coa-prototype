@@ -1,67 +1,54 @@
-pub mod adaptor;
-
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::collections::hash_map::Entry;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
-use log::warn;
+
+use log::{error, warn};
+use rand::RngCore;
+use rand::rngs::OsRng;
 use tokio::sync::mpsc::{Receiver, Sender};
-use xrpl_consensus_core::{Ledger as LedgerTrait, NetClock, WallNetClock};
-use xrpl_consensus_validations::arena_ledger_trie::ArenaLedgerTrie;
-use xrpl_consensus_validations::ledger_trie::LedgerTrie;
+use xrpl_consensus_core::{Ledger as LedgerTrait, NetClock};
 use xrpl_consensus_validations::{Adaptor, ValidationParams, Validations};
+use xrpl_consensus_validations::arena_ledger_trie::ArenaLedgerTrie;
 use config::{Committee, WorkerId};
-use crypto::{Digest, PublicKey};
-use primary::{ConsensusPrimaryMessage, PrimaryConsensusMessage};
-use primary::proposal::Proposal;
+use crypto::{Digest, PublicKey, SignatureService};
+use primary::{ConsensusPrimaryMessage, PrimaryConsensusMessage, Validation};
 use primary::Ledger;
+use primary::proposal::{ConsensusRound, Proposal, SignedProposal};
+
 use crate::adaptor::ValidationsAdaptor;
+
+pub mod adaptor;
 
 pub const INITIAL_WAIT: Duration = Duration::from_secs(2);
 
 pub enum ConsensusState {
+    // TODO: If the primary is taking care of preferred branch selection and dealing with
+    //  syncing and switching if we are not on the preferred branch, do we really need this
+    //  here, or should the primary keep track of if it's synced or not?
     NotSynced,
     InitialWait(SystemTime),
     Deliberating,
     Executing,
 }
 
-pub struct ConsensusRound(u8);
-
-impl ConsensusRound {
-    pub fn next(mut self) -> Self {
-        self.0 += 1;
-        self
-    }
-
-    pub fn reset(mut self) -> Self {
-        self.0 = 0;
-        self
-    }
-
-    pub fn threshold(&self) -> f32 {
-        match self.0 {
-            0 => 0.5,
-            1 => 0.65,
-            2 => 0.70,
-            _ => 0.95
-        }
-    }
-}
-
 pub struct Consensus {
     /// The UNL information.
     committee: Committee,
+    node_id: PublicKey,
     /// The last `Ledger` we have validated.
+    /// TODO: How does this get updated? Should the Primary send us a message when it validates
+    ///   a new ledger?
     latest_ledger: Ledger,
     ///
     round: ConsensusRound,
     clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
     state: ConsensusState,
-    proposals: HashMap<PublicKey, Proposal>,
-    batch_pool: Vec<(Digest, WorkerId)>,
+    proposals: HashMap<PublicKey, Arc<SignedProposal>>,
+    batch_pool: HashSet<(Digest, WorkerId)>,
     validations: Validations<ValidationsAdaptor, ArenaLedgerTrie<Ledger>>,
+    validation_cookie: u64,
+    signature_service: SignatureService,
 
     rx_primary: Receiver<PrimaryConsensusMessage>,
     tx_primary: Sender<ConsensusPrimaryMessage>,
@@ -70,22 +57,28 @@ pub struct Consensus {
 impl Consensus {
     pub fn spawn(
         committee: Committee,
+        node_id: PublicKey,
+        signature_service: SignatureService,
         adaptor: ValidationsAdaptor,
         clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
         rx_primary: Receiver<PrimaryConsensusMessage>,
         tx_primary: Sender<ConsensusPrimaryMessage>,
     ) {
         tokio::spawn(async move {
+            let mut rng = OsRng {};
             let now = clock.read().unwrap().now();
             Self {
                 committee,
+                node_id,
                 latest_ledger: Ledger::make_genesis(),
-                round: ConsensusRound(0),
+                round: 0.into(),
                 clock: clock.clone(),
                 state: ConsensusState::InitialWait(now),
                 proposals: Default::default(),
-                batch_pool: vec![],
+                batch_pool: HashSet::new(),
                 validations: Validations::new(ValidationParams::default(), adaptor, clock),
+                validation_cookie: rng.next_u64(),
+                signature_service,
                 rx_primary,
                 tx_primary,
             }
@@ -98,10 +91,10 @@ impl Consensus {
         while let Some(message) = self.rx_primary.recv().await {
             match message {
                 PrimaryConsensusMessage::Timeout => { self.on_timeout().await }
-                PrimaryConsensusMessage::OwnBatch(batch) => {
+                PrimaryConsensusMessage::Batch(batch) => {
                     // Store any batches that come from the primary in batch_pool to be included
                     // in a future proposal.
-                    self.batch_pool.push(batch);
+                    self.batch_pool.insert(batch);
                 }
                 PrimaryConsensusMessage::Proposal(proposal) => {
                     self.on_proposal_received(proposal);
@@ -135,13 +128,13 @@ impl Consensus {
                     if self.now().duration_since(wait_start).unwrap() > INITIAL_WAIT {
                         // If we're in the InitialWait state and we've waited longer than the configured
                         // initial wait time, make a proposal.
-                        self.propose();
+                        self.propose_first().await;
                     }
 
                     // else keep waiting
                 }
                 ConsensusState::Deliberating => {
-                    self.re_propose();
+                    self.re_propose().await;
                 }
             }
         }
@@ -152,16 +145,152 @@ impl Consensus {
         self.clock.read().unwrap().now()
     }
 
-    fn propose(&mut self) {
-        todo!()
+    async fn propose_first(&mut self) {
+        self.state = ConsensusState::Deliberating;
+
+        // TODO: Consider redesigning the batch pool to deal with batches that were disputed
+        //  and don't make it to the next round of proposals. Currently, if a batch does not make
+        //  it to the next proposal round because not enough validators had the batch in their proposal,
+        //  that batch will be dropped and will never make it into a validated ledger. Ideally,
+        //  that batch should be queued for the next ledger's consensus process.
+        let batch_set = self.batch_pool.drain().collect();
+        self.propose(batch_set).await;
     }
 
-    fn re_propose(&mut self) {
-        todo!()
+    async fn re_propose(&mut self) {
+        if self.check_consensus() {
+            self.build_ledger().await;
+        } else {
+            // threshold is the percentage of UNL members who need to propose the same set of batches
+            let threshold = self.round.threshold();
+            // This is the number of UNL members who need to propose the same set of batches based
+            // on the threshold percentage.
+            let num_nodes_threshold = (self.committee.authorities.len() as f32 * threshold).ceil() as u32;
+
+            // This will build a HashMap of (Digest, WorkerId) -> number of validators that proposed it,
+            // then filter that HashMap to the (Digest, WorkerId)s that have a count > num_nodes_threshold
+            // and collect that into a new proposal set.
+            let new_proposal_set: HashSet<(Digest, WorkerId)> = self.proposals.iter()
+                .map(|v| v.1)
+                .flat_map(|v| v.proposal.batches.iter())
+                .fold(HashMap::<(Digest, WorkerId), u32>::new(), |mut map, digest| {
+                    *map.entry(*digest).or_default() += 1;
+                    map
+                })
+                .into_iter()
+                .filter(|(_, count)| *count > num_nodes_threshold)
+                .map(|(digest, _)| digest)
+                .collect();
+
+            self.propose(new_proposal_set).await;
+        }
     }
 
-    fn on_proposal_received(&mut self, proposal: Proposal) {
-        todo!()
+    async fn propose(&mut self, batch_set: HashSet<(Digest, WorkerId)>) {
+        let proposal = Proposal::new(
+            self.round,
+            self.latest_ledger.id(),
+            self.latest_ledger.seq() + 1,
+            batch_set,
+            self.node_id
+        );
+
+        let signed_proposal = Arc::new(proposal.sign(&mut self.signature_service).await);
+        self.proposals.insert(self.node_id, signed_proposal.clone());
+        self.tx_primary.send(ConsensusPrimaryMessage::Proposal(signed_proposal)).await
+            .expect("Could not send proposal to primary.");
+        self.round = self.round.next();
+    }
+
+    fn on_proposal_received(&mut self, proposal: SignedProposal) {
+        // The Primary will check the signature and make sure the proposal comes from
+        // someone in our UNL before sending it to Consensus, therefore we do not need to
+        // check here again. Additionally, the Primary will delay sending us a proposal until
+        // it has synced all of the batches that it does not have in its local storage.
+        if proposal.proposal.parent_id == self.latest_ledger.id() {
+            // Either insert the proposal if we haven't seen a proposal from this node,
+            // or update an existing node's proposal if the given proposal's round is higher
+            // than what we have in our map.
+            match self.proposals.entry(proposal.proposal.node_id) {
+                Entry::Occupied(mut e) => {
+                    if e.get().proposal.round < proposal.proposal.round {
+                        e.insert(Arc::new(proposal));
+                    }
+                }
+                Entry::Vacant(e) => {
+                    e.insert(Arc::new(proposal));
+                }
+            }
+        }
+    }
+
+    fn check_consensus(&self) -> bool {
+        // Find our proposal
+        let our_proposal = self.proposals.get(&self.node_id)
+            .expect("We did not propose anything the first round.");
+
+        // Determine the number of nodes that need to agree with our proposal to reach consensus
+        // by multiplying the number of validators in our UNL by 0.80 and taking the ceiling.
+        let num_nodes_for_threshold = (self.committee.authorities.len() as f32 * 0.80).ceil() as usize;
+
+        // Determine how many proposals have the same set of batches as us.
+        let num_matching_sets = self.proposals.iter()
+            .filter(|p| p.1.proposal.batches == our_proposal.proposal.batches)
+            .count();
+
+        // If 80% or more of UNL nodes proposed the same batch set, we have reached consensus,
+        // otherwise we need another round.
+        num_matching_sets >= num_nodes_for_threshold
+    }
+
+    async fn build_ledger(&mut self) {
+        self.state = ConsensusState::Executing;
+
+        let new_ledger = self.execute();
+
+        let validation = Validation::new(
+            new_ledger.seq(),
+            new_ledger.id(),
+            self.clock.read().unwrap().now(),
+            self.clock.read().unwrap().now(),
+            self.node_id,
+            self.node_id,
+            true,
+            true,
+            self.validation_cookie
+        );
+
+        let signed_validation = validation.sign(&mut self.signature_service).await;
+        if let Err(e) = self.validations.try_add(&self.node_id, &signed_validation) {
+            error!("{:?} could not be added. Error: {:?}", signed_validation, e);
+            return;
+        }
+
+        self.tx_primary.send(ConsensusPrimaryMessage::Validation(signed_validation)).await
+            .expect("Failed to send validation to Primary.");
+
+        self.latest_ledger = new_ledger;
+        self.proposals.clear();
+        self.round.reset();
+        self.state = ConsensusState::InitialWait(self.clock.read().unwrap().now());
+    }
+
+    fn execute(&self) -> Ledger {
+        let mut new_ancestors = vec![self.latest_ledger.id()];
+        new_ancestors.extend_from_slice(self.latest_ledger.ancestors.as_slice());
+        let our_proposal = self.proposals.get(&self.node_id)
+            .expect("Could not find our own proposal");
+
+        // TODO: Do we need to store a Vec<Digest> in Ledger and sort batches here so that they
+        //  yield the same ID on every validator?
+        let batches = our_proposal.proposal.batches.iter()
+            .map(|b| b.0)
+            .collect();
+        Ledger::new(
+            self.latest_ledger.seq() + 1,
+            new_ancestors,
+            batches
+        )
     }
 }
 

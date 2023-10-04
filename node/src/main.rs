@@ -12,6 +12,7 @@ use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
 use xrpl_consensus_core::WallNetClock;
 use consensus::adaptor::ValidationsAdaptor;
+use crypto::{SecretKey, SignatureService};
 use worker::Worker;
 
 /// The default channel capacity.
@@ -102,8 +103,11 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let (tx_feedback, rx_feedback) = channel(CHANNEL_CAPACITY);
             let (tx_primary_consensus, rx_primary_consensus) = channel(CHANNEL_CAPACITY);
             let (tx_consensus_primary, rx_consensus_primary) = channel(CHANNEL_CAPACITY);
+            let node_id = keypair.name.clone();
+            let signature_service = SignatureService::new(keypair.secret);
             Primary::spawn(
-                keypair,
+                node_id,
+                signature_service.clone(),
                 committee.clone(),
                 parameters.clone(),
                 store,
@@ -116,6 +120,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             let clock = Arc::new(RwLock::new(WallNetClock));
             Consensus::spawn(
                 committee,
+                node_id,
+                signature_service,
                 adaptor,
                 clock,
                 rx_primary_consensus,
