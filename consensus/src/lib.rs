@@ -102,7 +102,7 @@ impl Consensus {
                     self.reset();
                 }
                 PrimaryConsensusMessage::Validation(validation) => {
-                    self.process_validation(validation);
+                    self.process_validation(validation).await;
                 }
             }
         }
@@ -266,7 +266,7 @@ impl Consensus {
         );
 
         let signed_validation = validation.sign(&mut self.signature_service).await;
-        if let Err(e) = self.validations.try_add(&self.node_id, &signed_validation) {
+        if let Err(e) = self.validations.try_add(&self.node_id, &signed_validation).await {
             error!("{:?} could not be added. Error: {:?}", signed_validation, e);
             return;
         }
@@ -306,8 +306,8 @@ impl Consensus {
         self.state = ConsensusState::InitialWait(self.now());
     }
 
-    fn process_validation(&mut self, validation: SignedValidation) {
-        if let Err(e) = self.validations.try_add(&validation.validation.node_id, &validation) {
+    async fn process_validation(&mut self, validation: SignedValidation) {
+        if let Err(e) = self.validations.try_add(&validation.validation.node_id, &validation).await {
             error!("{:?} could not be added. Error: {:?}", validation, e);
         }
     }
