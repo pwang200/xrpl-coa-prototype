@@ -37,8 +37,6 @@ pub struct Consensus {
     committee: Committee,
     node_id: PublicKey,
     /// The last `Ledger` we have validated.
-    /// TODO: How does this get updated? Should the Primary send us a message when it validates
-    ///   a new ledger?
     latest_ledger: Ledger,
     ///
     round: ConsensusRound,
