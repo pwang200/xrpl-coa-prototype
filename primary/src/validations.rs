@@ -11,7 +11,7 @@ pub struct Validation {
     ledger_id: Digest,
     sign_time: SystemTime,
     seen_time: SystemTime,
-    node_id: PublicKey,
+    pub node_id: PublicKey,
     signing_pub_key: PublicKey,
     full: bool,
     trusted: bool,
@@ -54,7 +54,7 @@ impl Validation {
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct SignedValidation {
-    validation: Validation,
+    pub validation: Validation,
     signature: Signature,
 
 }

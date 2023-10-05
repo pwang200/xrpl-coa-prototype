@@ -12,7 +12,7 @@ use xrpl_consensus_validations::{Adaptor, ValidationParams, Validations};
 use xrpl_consensus_validations::arena_ledger_trie::ArenaLedgerTrie;
 use config::{Committee, WorkerId};
 use crypto::{Digest, PublicKey, SignatureService};
-use primary::{ConsensusPrimaryMessage, PrimaryConsensusMessage, Validation};
+use primary::{ConsensusPrimaryMessage, PrimaryConsensusMessage, SignedValidation, Validation};
 use primary::Ledger;
 use primary::proposal::{ConsensusRound, Proposal, SignedProposal};
 
@@ -98,6 +98,13 @@ impl Consensus {
                 }
                 PrimaryConsensusMessage::Proposal(proposal) => {
                     self.on_proposal_received(proposal);
+                }
+                PrimaryConsensusMessage::SyncedLedger(synced_ledger) => {
+                    self.latest_ledger = synced_ledger;
+                    self.reset();
+                }
+                PrimaryConsensusMessage::Validation(validation) => {
+                    self.process_validation(validation);
                 }
             }
         }
@@ -270,9 +277,11 @@ impl Consensus {
             .expect("Failed to send validation to Primary.");
 
         self.latest_ledger = new_ledger;
-        self.proposals.clear();
-        self.round.reset();
-        self.state = ConsensusState::InitialWait(self.clock.read().unwrap().now());
+
+        self.tx_primary.send(ConsensusPrimaryMessage::NewLedger(self.latest_ledger.clone())).await
+            .expect("Failed to send new ledger to Primary.");
+
+        self.reset();
     }
 
     fn execute(&self) -> Ledger {
@@ -291,6 +300,18 @@ impl Consensus {
             new_ancestors,
             batches
         )
+    }
+
+    fn reset(&mut self) {
+        self.proposals.clear();
+        self.round.reset();
+        self.state = ConsensusState::InitialWait(self.now());
+    }
+
+    fn process_validation(&mut self, validation: SignedValidation) {
+        if let Err(e) = self.validations.try_add(&validation.validation.node_id, &validation) {
+            error!("{:?} could not be added. Error: {:?}", validation, e);
+        }
     }
 }
 

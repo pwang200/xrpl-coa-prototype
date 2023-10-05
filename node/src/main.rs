@@ -116,8 +116,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 tx_primary_consensus,
                 rx_consensus_primary
             );
-            let adaptor = ValidationsAdaptor::new();
             let clock = Arc::new(RwLock::new(WallNetClock));
+            let adaptor = ValidationsAdaptor::new(clock.clone());
             Consensus::spawn(
                 committee,
                 node_id,

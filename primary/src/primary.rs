@@ -23,7 +23,7 @@ use std::sync::Arc;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use xrpl_consensus_core::LedgerIndex;
-use crate::{Ledger, SignedValidation};
+use crate::{Ledger, SignedValidation, Validation};
 use crate::proposal::SignedProposal;
 
 /// The default channel capacity for each channel of the primary.
@@ -62,14 +62,17 @@ pub enum WorkerPrimaryMessage {
 pub enum PrimaryConsensusMessage {
     Timeout,
     Batch((Digest, WorkerId)),
-    Proposal(SignedProposal)
+    Proposal(SignedProposal),
+    SyncedLedger(Ledger),
+    Validation(SignedValidation)
 }
 
 #[derive(Debug)]
 pub enum ConsensusPrimaryMessage {
     Proposal(Arc<SignedProposal>),
     SyncLedger(Digest, LedgerIndex),
-    Validation(SignedValidation)
+    Validation(SignedValidation),
+    NewLedger(Ledger)
 }
 
 pub struct Primary;

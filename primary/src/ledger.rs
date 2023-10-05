@@ -60,7 +60,7 @@ impl xrpl_consensus_core::Ledger for Ledger {
             }
 
             let diff = self.seq() - seq;
-            return *self.ancestors.get(self.ancestors.len() - diff).unwrap();
+            return *self.ancestors.get(self.ancestors.len() - diff as usize).unwrap();
         }
 
         Digest::default()
