@@ -70,7 +70,6 @@ pub enum PrimaryConsensusMessage {
 #[derive(Debug)]
 pub enum ConsensusPrimaryMessage {
     Proposal(Arc<SignedProposal>),
-    SyncLedger(Digest, LedgerIndex),
     Validation(SignedValidation),
     NewLedger(Ledger)
 }

@@ -98,8 +98,7 @@ impl Consensus {
                     self.on_proposal_received(proposal);
                 }
                 PrimaryConsensusMessage::SyncedLedger(synced_ledger) => {
-                    self.latest_ledger = synced_ledger;
-                    self.reset();
+                    self.validations.adaptor_mut().add_ledger(synced_ledger);
                 }
                 PrimaryConsensusMessage::Validation(validation) => {
                     self.process_validation(validation).await;
@@ -117,9 +116,8 @@ impl Consensus {
                     (preferred_id, preferred_seq)
                 );
                 self.state = ConsensusState::NotSynced;
-                self.tx_primary.send(ConsensusPrimaryMessage::SyncLedger(preferred_id, preferred_seq))
-                    .await
-                    .expect("Failed to ask primary to sync ledger.");
+                self.latest_ledger = self.validations.adaptor_mut().acquire(&preferred_id).await
+                    .expect("ValidationsAdaptor did not have preferred ledger in cache.");
             }
         } else {
             match self.state {
