@@ -59,14 +59,14 @@ pub enum PrimaryConsensusMessage {
     Batch((Digest, WorkerId)),
     Proposal(SignedProposal),
     SyncedLedger(Ledger),
-    Validation(SignedValidation)
+    Validation(SignedValidation),
 }
 
 #[derive(Debug)]
 pub enum ConsensusPrimaryMessage {
     Proposal(Arc<SignedProposal>),
     Validation(SignedValidation),
-    NewLedger(Ledger)
+    NewLedger(Ledger),
 }
 
 pub struct Primary;
@@ -77,7 +77,7 @@ impl Primary {
         committee: Committee,
         store: Store,
         tx_primary_consensus: Sender<PrimaryConsensusMessage>,
-        rx_consensus_primary: Receiver<ConsensusPrimaryMessage>
+        rx_consensus_primary: Receiver<ConsensusPrimaryMessage>,
     ) {
         let (tx_worker_batches, rx_worker_batches) = channel::<(Digest, WorkerId)>(CHANNEL_CAPACITY);
         let (tx_store_batches, rx_stored_batches) = channel(CHANNEL_CAPACITY);
@@ -169,7 +169,6 @@ impl Primary {
             committee.clone(),
             store.clone(),
             consensus_round.clone(),
-
             tx_primary_consensus,
             rx_consensus_primary,
             rx_stored_batches,
@@ -210,17 +209,17 @@ impl MessageHandler for PrimaryReceiverHandler {
 
         // Deserialize and parse the message.
         match bincode::deserialize(&serialized).map_err(DagError::SerializationError)? {
-            PrimaryPrimaryMessage::Proposal(signed_proposal)=> self
+            PrimaryPrimaryMessage::Proposal(signed_proposal) => self
                 .tx_network_proposals
                 .send(signed_proposal)
                 .await
                 .expect("Failed to send proposal"),
-            PrimaryPrimaryMessage::Validation(signed_validation)=> self
+            PrimaryPrimaryMessage::Validation(signed_validation) => self
                 .tx_network_validations
                 .send(signed_validation)
                 .await
                 .expect("Failed to send validation"),
-            PrimaryPrimaryMessage::Ledger(ledger)=> self
+            PrimaryPrimaryMessage::Ledger(ledger) => self
                 .tx_network_ledgers
                 .send(ledger)
                 .await
@@ -263,32 +262,31 @@ impl MessageHandler for WorkerReceiverHandler {
         //         .await
         //         .expect("Failed to send workers' digests");
         // };
-
         match bincode::deserialize(&serialized).map_err(DagError::SerializationError)? {
             WorkerPrimaryMessage::OurBatch(digest, worker_id) => {
                 self
-                .tx_store_batches
-                .send((digest.clone(), worker_id))
-                .await
-                .expect("Failed to send workers' digests");
-            self
-                .tx_worker_batches
-                .send((digest, worker_id))
-                .await
-                .expect("Failed to send workers' digests");
-            },
+                    .tx_store_batches
+                    .send((digest.clone(), worker_id))
+                    .await
+                    .expect("Failed to send workers' digests");
+                self
+                    .tx_worker_batches
+                    .send((digest, worker_id))
+                    .await
+                    .expect("Failed to send workers' digests");
+            }
             WorkerPrimaryMessage::OthersBatch(digest, worker_id) => {
                 self
-                .tx_store_batches
-                .send((digest.clone(), worker_id))
-                .await
-                .expect("Failed to send workers' digests");
-            self
-                .tx_worker_batches
-                .send((digest, worker_id))
-                .await
-                .expect("Failed to send workers' digests");
-            },
+                    .tx_store_batches
+                    .send((digest.clone(), worker_id))
+                    .await
+                    .expect("Failed to send workers' digests");
+                self
+                    .tx_worker_batches
+                    .send((digest, worker_id))
+                    .await
+                    .expect("Failed to send workers' digests");
+            }
         }
 
         Ok(())

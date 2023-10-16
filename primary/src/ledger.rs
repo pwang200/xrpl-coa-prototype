@@ -14,7 +14,7 @@ pub struct Ledger {
     seq: LedgerIndex,
     /// Ordered by latest -> oldest, ie the first element will be this ledger's parent.
     pub ancestors: Vec<Digest>,
-    batch_set: HashSet<Digest>,
+    pub batch_set: HashSet<Digest>,
 }
 
 impl Display for Ledger {

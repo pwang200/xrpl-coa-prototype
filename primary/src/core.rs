@@ -6,8 +6,8 @@ use bytes::Bytes;
 use config::Committee;
 //use crypto::Hash as _;
 use crypto::{Digest, PublicKey};
-use log::{debug};
-use network::{ReliableSender};
+use log::{debug, info};
+use network::{CancelHandler, ReliableSender};
 use std::sync::atomic::{AtomicU64};
 use std::sync::Arc;
 use store::Store;
@@ -44,6 +44,9 @@ pub struct Core {
 
     /// A network sender to send the batches to the other workers.
     network: ReliableSender,
+
+    /// TODO: We need some way to clean this Vec up.
+    cancel_handlers: Vec<CancelHandler>,
 }
 
 impl Core {
@@ -75,6 +78,7 @@ impl Core {
                 rx_loopback_ledgers,
                 tx_own_ledgers,
                 network: ReliableSender::new(),
+                cancel_handlers: vec![],
             }
                 .run()
                 .await;
@@ -89,6 +93,9 @@ impl Core {
     }
 
     async fn process_stored_batch(&mut self, batch: Digest, worker_id: WorkerId) {
+        // #[cfg(feature = "benchmark")]
+        // info!("Created {:?}", batch);
+
         self.tx_primary_consensus
             .send(PrimaryConsensusMessage::Batch((batch, worker_id)))
             .await //TODO need to wait?
@@ -131,7 +138,8 @@ impl Core {
             .collect();
         let bytes = bincode::serialize(&PrimaryPrimaryMessage::Proposal(proposal.clone()))
             .expect("Failed to serialize our own proposal");
-        self.network.broadcast(addresses, Bytes::from(bytes)).await;
+        let handlers = self.network.broadcast(addresses, Bytes::from(bytes)).await;
+        self.cancel_handlers.extend(handlers);
     }
 
     async fn process_own_validation(&mut self, validation: SignedValidation) {
@@ -143,7 +151,8 @@ impl Core {
             .collect();
         let bytes = bincode::serialize(&PrimaryPrimaryMessage::Validation(validation))
             .expect("Failed to serialize our own validation");
-        self.network.broadcast(addresses, Bytes::from(bytes)).await;
+        let handlers = self.network.broadcast(addresses, Bytes::from(bytes)).await;
+        self.cancel_handlers.extend(handlers);
     }
 
     async fn process_own_ledger(&mut self, ledger: Ledger) {

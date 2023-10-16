@@ -3,7 +3,7 @@ use std::collections::hash_map::Entry;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
-use log::{error, warn};
+use log::{error, info, warn};
 use rand::RngCore;
 use rand::rngs::OsRng;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -88,19 +88,26 @@ impl Consensus {
     async fn run(&mut self) {
         while let Some(message) = self.rx_primary.recv().await {
             match message {
-                PrimaryConsensusMessage::Timeout => { self.on_timeout().await }
+                PrimaryConsensusMessage::Timeout => {
+                    info!("Received Timeout event.");
+                    self.on_timeout().await;
+                }
                 PrimaryConsensusMessage::Batch(batch) => {
                     // Store any batches that come from the primary in batch_pool to be included
                     // in a future proposal.
+                    // info!("Received batch {:?}.", batch.0);
                     self.batch_pool.insert(batch);
                 }
                 PrimaryConsensusMessage::Proposal(proposal) => {
+                    info!("Received proposal: {:?}", proposal);
                     self.on_proposal_received(proposal);
                 }
                 PrimaryConsensusMessage::SyncedLedger(synced_ledger) => {
+                    info!("Received SyncedLedger.");
                     self.validations.adaptor_mut().add_ledger(synced_ledger);
                 }
                 PrimaryConsensusMessage::Validation(validation) => {
+                    info!("Received validation : {:?}.", validation);
                     self.process_validation(validation).await;
                 }
             }
@@ -109,7 +116,9 @@ impl Consensus {
 
     async fn on_timeout(&mut self) {
         if let Some((preferred_seq, preferred_id)) = self.validations.get_preferred(&self.latest_ledger) {
+            info!("Preferred branch returned something.");
             if preferred_id != self.latest_ledger.id() {
+                info!("We're not on the right branch.");
                 warn!(
                     "Not on preferred ledger. We are on {:?} and preferred is {:?}",
                     (self.latest_ledger.id(), self.latest_ledger.seq()),
@@ -118,30 +127,35 @@ impl Consensus {
                 self.state = ConsensusState::NotSynced;
                 self.latest_ledger = self.validations.adaptor_mut().acquire(&preferred_id).await
                     .expect("ValidationsAdaptor did not have preferred ledger in cache.");
-            }
-        } else {
-            match self.state {
-                ConsensusState::NotSynced => {
-                    // do nothing
-                }
-                ConsensusState::Executing => {
-                    // do nothing
-                }
-                ConsensusState::InitialWait(wait_start) => {
-                    if self.now().duration_since(wait_start).unwrap() > INITIAL_WAIT {
-                        // If we're in the InitialWait state and we've waited longer than the configured
-                        // initial wait time, make a proposal.
-                        self.propose_first().await;
-                    }
 
-                    // else keep waiting
-                }
-                ConsensusState::Deliberating => {
-                    self.re_propose().await;
-                }
+                return;
             }
         }
+        match self.state {
+            ConsensusState::NotSynced => {
+                info!("NotSynced. Doing nothing.");
+                // do nothing
+            }
+            ConsensusState::Executing => {
+                info!("Executing. Doing nothing.");
+                // do nothing
+            }
+            ConsensusState::InitialWait(wait_start) => {
+                info!("InitialWait. Checking if we should propose.");
+                if self.now().duration_since(wait_start).unwrap() > INITIAL_WAIT {
+                    info!("We should propose so we are.");
+                    // If we're in the InitialWait state and we've waited longer than the configured
+                    // initial wait time, make a proposal.
+                    self.propose_first().await;
+                }
 
+                // else keep waiting
+            }
+            ConsensusState::Deliberating => {
+                info!("Deliberating. Reproposing.");
+                self.re_propose().await;
+            }
+        }
     }
 
     fn now(&self) -> SystemTime {
@@ -157,13 +171,16 @@ impl Consensus {
         //  that batch will be dropped and will never make it into a validated ledger. Ideally,
         //  that batch should be queued for the next ledger's consensus process.
         let batch_set = self.batch_pool.drain().collect();
+        info!("Proposing batch set: {:?}", batch_set);
         self.propose(batch_set).await;
     }
 
     async fn re_propose(&mut self) {
         if self.check_consensus() {
+            info!("We have consensus!");
             self.build_ledger().await;
         } else {
+            info!("We don't have consensus :(");
             // threshold is the percentage of UNL members who need to propose the same set of batches
             let threshold = self.round.threshold();
             // This is the number of UNL members who need to propose the same set of batches based
@@ -195,7 +212,7 @@ impl Consensus {
             self.latest_ledger.id(),
             self.latest_ledger.seq() + 1,
             batch_set,
-            self.node_id
+            self.node_id,
         );
 
         let signed_proposal = Arc::new(proposal.sign(&mut self.signature_service).await);
@@ -260,10 +277,16 @@ impl Consensus {
             self.node_id,
             true,
             true,
-            self.validation_cookie
+            self.validation_cookie,
         );
 
         let signed_validation = validation.sign(&mut self.signature_service).await;
+
+        // Need to add the new ledger to our cache before adding it to self.validations because
+        // self.validations.try_add will call Adaptor::acquire, which needs to have the ledger
+        // in its cache or else it will panic.
+        self.validations.adaptor_mut().add_ledger(new_ledger.clone());
+
         if let Err(e) = self.validations.try_add(&self.node_id, &signed_validation).await {
             error!("{:?} could not be added. Error: {:?}", signed_validation, e);
             return;
@@ -279,8 +302,12 @@ impl Consensus {
 
         self.reset();
 
-        // #[cfg(feature = "benchmark")]
-        // info!("Committed {} -> {:?}", self.latest_ledger, )
+        info!("Did a new ledger.");
+
+        #[cfg(feature = "benchmark")]
+        for batch in &self.latest_ledger.batch_set {
+            info!("Committed {:?} ", batch);
+        }
     }
 
     fn execute(&self) -> Ledger {
@@ -297,7 +324,7 @@ impl Consensus {
         Ledger::new(
             self.latest_ledger.seq() + 1,
             new_ancestors,
-            batches
+            batches,
         )
     }
 
