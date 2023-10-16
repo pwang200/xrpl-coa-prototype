@@ -278,6 +278,9 @@ impl Consensus {
             .expect("Failed to send new ledger to Primary.");
 
         self.reset();
+
+        // #[cfg(feature = "benchmark")]
+        // info!("Committed {} -> {:?}", self.latest_ledger, )
     }
 
     fn execute(&self) -> Ledger {

@@ -1,4 +1,6 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
+#![allow(dead_code)]
+
 #[macro_use]
 mod error;
 mod core;

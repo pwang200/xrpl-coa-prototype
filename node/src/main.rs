@@ -1,18 +1,21 @@
 use std::sync::{Arc, RwLock};
+
 // Copyright(C) Facebook, Inc. and its affiliates.
 use anyhow::{Context, Result};
-use clap::{crate_name, crate_version, App, AppSettings, ArgMatches, SubCommand};
-use config::Export as _;
-use config::Import as _;
-use config::{Committee, KeyPair, Parameters, WorkerId};
-use consensus::Consensus;
+use clap::{App, AppSettings, ArgMatches, crate_name, crate_version, SubCommand};
 use env_logger::Env;
-use primary::Primary;//{Certificate, Primary};
-use store::Store;
 use tokio::sync::mpsc::{channel, Receiver};
 use xrpl_consensus_core::WallNetClock;
+
+use config::{Committee, KeyPair, Parameters, WorkerId};
+use config::Export as _;
+use config::Import as _;
 use consensus::adaptor::ValidationsAdaptor;
-use crypto::{SecretKey, SignatureService};
+use consensus::Consensus;
+use crypto::SignatureService;
+use primary::Primary;
+//{Certificate, Primary};
+use store::Store;
 use worker::Worker;
 
 /// The default channel capacity.
@@ -93,7 +96,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     let store = Store::new(store_path).context("Failed to create a store")?;
 
     // Channels the sequence of certificates.
-//    let (tx_output, rx_output) = channel(CHANNEL_CAPACITY);
+   let (_tx_output, rx_output) = channel(CHANNEL_CAPACITY);
 
     // Check whether to run a primary, a worker, or an entire authority.
     match matches.subcommand() {
@@ -140,15 +143,15 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     }
 
     // Analyze the consensus' output.
-    //analyze(rx_output).await;
+    analyze(rx_output).await;
 
     // If this expression is reached, the program ends and all other tasks terminate.
     unreachable!();
 }
 
 // /// Receives an ordered list of certificates and apply any application-specific logic.
-// async fn analyze(mut rx_output: Receiver<Certificate>) {
-//     while let Some(_certificate) = rx_output.recv().await {
-//         // NOTE: Here goes the application logic.
-//     }
-// }
+async fn analyze(mut rx_output: Receiver<Vec<u8>>) {
+    while let Some(_certificate) = rx_output.recv().await {
+        // NOTE: Here goes the application logic.
+    }
+}

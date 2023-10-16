@@ -1,5 +1,6 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 //use crate::error::{DagError, DagResult};
+
 use crate::primary::{PrimaryPrimaryMessage};
 use bytes::Bytes;
 use config::Committee;
@@ -175,7 +176,7 @@ impl Core {
                 }
 
                 () = &mut timer => {
-                    self.process_timer_event();
+                    self.process_timer_event().await;
                     timer.as_mut().reset(Instant::now() + Duration::from_millis(TIMER_RESOLUTION));
                 }
             }

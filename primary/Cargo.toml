@@ -25,7 +25,6 @@ config = { path = "../config" }
 network = { path = "../network" }
 
 
-
 xrpl-consensus-core = { path = "../../xrpl-consensus-rs/xrpl-consensus-core" }
 
 [dev-dependencies]

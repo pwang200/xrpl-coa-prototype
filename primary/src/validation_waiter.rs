@@ -1,6 +1,7 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
+use async_recursion::async_recursion;
 use bytes::Bytes;
 use log::error;
 // use futures::stream::futures_unordered::FuturesUnordered;
@@ -82,6 +83,7 @@ impl ValidationWaiter {
         });
     }
 
+    #[async_recursion]
     async fn store_children(&mut self, parent_id: &Digest) {
         match self.ledger_dependencies.remove(parent_id) {
             Some((children, _)) => {
@@ -97,7 +99,7 @@ impl ValidationWaiter {
                     }
                     //.expect("TODO: panic message");
                     //TODO why expect
-                    self.store_children(&ledger.id);
+                    self.store_children(&ledger.id).await;
                 }
             }
             None => {}
@@ -113,7 +115,7 @@ impl ValidationWaiter {
         match self.store.read(parent.to_vec()).await {
             Ok(Some(_)) => {
                 self.store.write(ledger.id.to_vec(), bincode::serialize(&ledger).unwrap()).await;
-                self.store_children(&ledger.id);
+                self.store_children(&ledger.id).await;
                 return None;
             }
             Ok(None) => {
