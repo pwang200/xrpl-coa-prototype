@@ -14,7 +14,7 @@ pub struct Ledger {
     seq: LedgerIndex,
     /// Ordered by latest -> oldest, ie the first element will be this ledger's parent.
     pub ancestors: Vec<Digest>,
-    pub batch_set: HashSet<Digest>,
+    pub batch_set: Vec<Digest>,
 }
 
 impl Display for Ledger {
@@ -25,15 +25,18 @@ impl Display for Ledger {
 
 impl Ledger {
     pub fn new(seq: LedgerIndex, ancestors: Vec<Digest>, batch_set: HashSet<Digest>) -> Self {
+        let mut ordered_set: Vec<Digest> = batch_set.into_iter()
+            .collect();
+        ordered_set.sort();
         Self {
-            id: Self::compute_id(seq, &ancestors, &batch_set),
+            id: Self::compute_id(seq, &ancestors, &ordered_set),
             seq,
             ancestors,
-            batch_set,
+            batch_set: ordered_set,
         }
     }
 
-    pub fn compute_id(seq: LedgerIndex, ancestors: &Vec<Digest>, batch_set: &HashSet<Digest>) -> Digest {
+    pub fn compute_id(seq: LedgerIndex, ancestors: &Vec<Digest>, batch_set: &Vec<Digest>) -> Digest {
         bincode::serialize(&(seq, ancestors, batch_set)).unwrap().as_slice().digest()
     }
 

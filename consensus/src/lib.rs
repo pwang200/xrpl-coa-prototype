@@ -192,6 +192,7 @@ impl Consensus {
             // and collect that into a new proposal set.
             let new_proposal_set: HashSet<(Digest, WorkerId)> = self.proposals.iter()
                 .map(|v| v.1)
+                .filter(|v| v.proposal.parent_id == self.latest_ledger.id)
                 .flat_map(|v| v.proposal.batches.iter())
                 .fold(HashMap::<(Digest, WorkerId), u32>::new(), |mut map, digest| {
                     *map.entry(*digest).or_default() += 1;
@@ -219,7 +220,7 @@ impl Consensus {
         self.proposals.insert(self.node_id, signed_proposal.clone());
         self.tx_primary.send(ConsensusPrimaryMessage::Proposal(signed_proposal)).await
             .expect("Could not send proposal to primary.");
-        self.round = self.round.next();
+        self.round.next();
     }
 
     fn on_proposal_received(&mut self, proposal: SignedProposal) {
@@ -302,11 +303,11 @@ impl Consensus {
 
         self.reset();
 
-        info!("Did a new ledger.");
+        info!("Did a new ledger {:?}.", self.latest_ledger);
 
         #[cfg(feature = "benchmark")]
         for batch in &self.latest_ledger.batch_set {
-            info!("Committed {:?} ", batch);
+            // info!("Committed {:?} ", batch);
         }
     }
 
@@ -340,4 +341,3 @@ impl Consensus {
         }
     }
 }
-

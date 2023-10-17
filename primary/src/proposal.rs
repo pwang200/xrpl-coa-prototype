@@ -16,14 +16,12 @@ impl From<u8> for ConsensusRound {
 }
 
 impl ConsensusRound {
-    pub fn next(mut self) -> Self {
+    pub fn next(&mut self) {
         self.0 += 1;
-        self
     }
 
-    pub fn reset(mut self) -> Self {
+    pub fn reset(&mut self) {
         self.0 = 0;
-        self
     }
 
     pub fn threshold(&self) -> f32 {

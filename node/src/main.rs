@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use clap::{App, AppSettings, ArgMatches, crate_name, crate_version, SubCommand};
 use env_logger::Env;
 use tokio::sync::mpsc::{channel, Receiver};
-use xrpl_consensus_core::WallNetClock;
+use xrpl_consensus_core::{Ledger as LedgerT, WallNetClock};
 
 use config::{Committee, KeyPair, Parameters, WorkerId};
 use config::Export as _;
@@ -13,7 +13,7 @@ use config::Import as _;
 use consensus::adaptor::ValidationsAdaptor;
 use consensus::Consensus;
 use crypto::SignatureService;
-use primary::Primary;
+use primary::{Ledger, Primary};
 //{Certificate, Primary};
 use store::Store;
 use worker::Worker;
@@ -93,10 +93,12 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     };
 
     // Make the data store.
-    let store = Store::new(store_path).context("Failed to create a store")?;
+    let mut store = Store::new(store_path).context("Failed to create a store")?;
+    let genesis_ledger = Ledger::make_genesis();
+    store.write(genesis_ledger.id.to_vec(), bincode::serialize(&genesis_ledger).unwrap()).await;
 
     // Channels the sequence of certificates.
-   let (_tx_output, rx_output) = channel(CHANNEL_CAPACITY);
+    let (_tx_output, rx_output) = channel(CHANNEL_CAPACITY);
 
     // Check whether to run a primary, a worker, or an entire authority.
     match matches.subcommand() {
