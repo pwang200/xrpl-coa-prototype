@@ -107,7 +107,7 @@ impl Consensus {
                     self.validations.adaptor_mut().add_ledger(synced_ledger);
                 }
                 PrimaryConsensusMessage::Validation(validation) => {
-                    // info!("Received validation : {:?}.", validation);
+                    info!("Consensus Received validation : {:?}.", validation);
                     self.process_validation(validation).await;
                 }
             }

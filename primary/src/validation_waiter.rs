@@ -196,6 +196,7 @@ impl ValidationWaiter {
             tokio::select! {
                 Some(signed_validation) = self.rx_network_validations.recv() => {
                     //TODO verify sig
+                    info!("Waiter Received validation for ledger {:?}", signed_validation.validation.ledger_id);
                     let ledger_id = signed_validation.validation.ledger_id;
                     match self.store.read(ledger_id.to_vec()).await{
                         Ok(Some(_)) => {
@@ -205,6 +206,7 @@ impl ValidationWaiter {
                             .expect("Failed to send validation");
                         }
                         Ok(None) => {
+                            info!("Need to acquire ledger {:?}", signed_validation.validation.ledger_id);
                             self.to_acquire.push_back((signed_validation, clock()));
                         }
                         Err(e) => {
@@ -228,14 +230,14 @@ impl ValidationWaiter {
                         Some((digest, pk)) => {
                             // acquire(digest, pk).await;
                             let address = self.committee
-                            .primary(&pk)
-                            .expect("Author is not in the committee")
-                            .primary_to_primary;
+                                .primary(&pk)
+                                .expect("Author is not in the committee")
+                                .primary_to_primary;
                             let mut digests = vec![];
                             digests.push(digest);
                             let message = PrimaryPrimaryMessage::LedgerRequest(digests,pk);
                             let bytes = bincode::serialize(&message)
-                            .expect("Failed to serialize batch sync request");
+                                .expect("Failed to serialize batch sync request");
                             self.network.send(address, Bytes::from(bytes)).await;
                         },
                         None => {}
@@ -244,9 +246,11 @@ impl ValidationWaiter {
 
                 Some(ledger) = self.rx_own_ledgers.recv() => {
                     //TODO check parent exist in DB
+                    info!("Waiter got our own ledger {:?}", ledger.id);
                     self.store.write(ledger.id.to_vec(), bincode::serialize(&ledger).unwrap()).await;
                     match self.validation_dependencies.remove(&ledger.id) {
                         Some(signed_validations) => {
+                            info!("Sending {:?} validations to consensus.", signed_validations.len());
                             for signed_validation in signed_validations.into_iter() {
                                 self.tx_loopback_validations.send(signed_validation).await.expect("TODO: panic message");
                             }
