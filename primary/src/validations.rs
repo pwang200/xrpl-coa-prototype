@@ -7,7 +7,7 @@ use xrpl_consensus_core::Ledger as LedgerTrait;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Validation {
-    seq: LedgerIndex,
+    pub seq: LedgerIndex,
     pub ledger_id: Digest,
     sign_time: SystemTime,
     seen_time: SystemTime,

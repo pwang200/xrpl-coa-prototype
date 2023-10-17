@@ -124,13 +124,13 @@ impl Consensus {
                     (self.latest_ledger.id(), self.latest_ledger.seq()),
                     (preferred_id, preferred_seq)
                 );
-                // self.state = ConsensusState::NotSynced;
+
                 self.latest_ledger = self.validations.adaptor_mut().acquire(&preferred_id).await
                     .expect("ValidationsAdaptor did not have preferred ledger in cache.");
 
-                return;
             }
         }
+
         match self.state {
             ConsensusState::NotSynced => {
                 info!("NotSynced. Doing nothing.");
@@ -142,6 +142,7 @@ impl Consensus {
             }
             ConsensusState::InitialWait(wait_start) => {
                 info!("InitialWait. Checking if we should propose.");
+
                 if self.now().duration_since(wait_start).unwrap() > INITIAL_WAIT {
                     info!("We should propose so we are.");
                     // If we're in the InitialWait state and we've waited longer than the configured
@@ -232,7 +233,6 @@ impl Consensus {
         // check here again. Additionally, the Primary will delay sending us a proposal until
         // it has synced all of the batches that it does not have in its local storage.
         if proposal.proposal.parent_id == self.latest_ledger.id() {
-            info!("Storing proposal {:?}", proposal.proposal);
             // Either insert the proposal if we haven't seen a proposal from this node,
             // or update an existing node's proposal if the given proposal's round is higher
             // than what we have in our map.
@@ -340,6 +340,7 @@ impl Consensus {
     }
 
     async fn process_validation(&mut self, validation: SignedValidation) {
+        info!("Received validation for ({:?}, {:?})", validation.validation.ledger_id, validation.validation.seq);
         if let Err(e) = self.validations.try_add(&validation.validation.node_id, &validation).await {
             error!("{:?} could not be added. Error: {:?}", validation, e);
         }

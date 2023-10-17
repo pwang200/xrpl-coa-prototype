@@ -113,7 +113,7 @@ impl Core {
 
     async fn process_validation(&mut self, validation: SignedValidation) {
         //-> DagResult<()> {
-        // debug!("Processing {:?}", validation);
+        debug!("Processing {:?}", validation);
         self.tx_primary_consensus
             .send(PrimaryConsensusMessage::Validation(validation))
             .await //TODO need to wait?

@@ -107,24 +107,28 @@ impl ValidationWaiter {
     }
 
     async fn store_ledger(&mut self, ledger: Ledger) -> Option<(Digest, PublicKey)> {
-        // info!("Storing ledger {:?}", ledger.id);
-        // info!("ledger_dependencies: {:?}", self.ledger_dependencies);
         if ledger.ancestors.is_empty() || self.ledger_dependencies.get(&ledger.id).is_none() {
-            // info!("First none.");
             return None;
         }
 
         let parent = ledger.ancestors[0].clone();
-        // info!("Parent is {:?}", parent);
         match self.store.read(parent.to_vec()).await {
             Ok(Some(_)) => {
-                // info!("Read parent");
                 self.store.write(ledger.id.to_vec(), bincode::serialize(&ledger).unwrap()).await;
+
+                match self.validation_dependencies.remove(&ledger.id) {
+                    Some(signed_validations) => {
+                        for signed_validation in signed_validations.into_iter() {
+                            self.tx_loopback_validations.send(signed_validation).await.expect("TODO: panic message");
+                        }
+                    },
+                    None => {}
+                }
+
                 self.store_children(&ledger.id).await;
                 return None;
             }
             Ok(None) => {
-                // info!("Did not read parent.");
                 let (_, pk) = self.ledger_dependencies.get(&ledger.id).unwrap();
                 let pk = pk.clone();
                 // self.ledger_dependencies.entry(parent).or_insert_with(Vec::new).push(ledger);
@@ -241,6 +245,14 @@ impl ValidationWaiter {
                 Some(ledger) = self.rx_own_ledgers.recv() => {
                     //TODO check parent exist in DB
                     self.store.write(ledger.id.to_vec(), bincode::serialize(&ledger).unwrap()).await;
+                    match self.validation_dependencies.remove(&ledger.id) {
+                        Some(signed_validations) => {
+                            for signed_validation in signed_validations.into_iter() {
+                                self.tx_loopback_validations.send(signed_validation).await.expect("TODO: panic message");
+                            }
+                        },
+                        None => {}
+                    }
                     self.store_children(&ledger.id).await;
                 },
 
