@@ -7,7 +7,7 @@ use crate::helper::Helper;
 use crate::payload_receiver::PayloadReceiver;
 use async_trait::async_trait;
 use bytes::Bytes;
-use config::{Committee, WorkerId};
+use config::{Committee, Parameters, WorkerId};
 use crypto::{Digest, PublicKey};
 use futures::sink::SinkExt as _;
 use log::info;
@@ -75,6 +75,7 @@ impl Primary {
     pub fn spawn(
         public_key: PublicKey,
         committee: Committee,
+        parameters: Parameters,
         store: Store,
         tx_primary_consensus: Sender<PrimaryConsensusMessage>,
         rx_consensus_primary: Receiver<ConsensusPrimaryMessage>,
@@ -92,6 +93,8 @@ impl Primary {
         let (tx_loopback_ledgers, rx_loopback_ledgers) = channel(CHANNEL_CAPACITY);
 
         let (tx_own_ledgers, rx_own_ledgers) = channel(CHANNEL_CAPACITY);
+
+        parameters.log();
 
         let name = public_key;
 

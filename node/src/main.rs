@@ -114,7 +114,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 node_id,
                 //signature_service.clone(),
                 committee.clone(),
-                //parameters.clone(),
+                parameters.clone(),
                 store,
                 tx_primary_consensus,
                 rx_consensus_primary

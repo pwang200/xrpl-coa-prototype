@@ -99,15 +99,15 @@ impl Consensus {
                     self.batch_pool.insert(batch);
                 }
                 PrimaryConsensusMessage::Proposal(proposal) => {
-                    info!("Received proposal: {:?}", proposal);
+                    // info!("Received proposal: {:?}", proposal);
                     self.on_proposal_received(proposal);
                 }
                 PrimaryConsensusMessage::SyncedLedger(synced_ledger) => {
-                    info!("Received SyncedLedger.");
+                    // info!("Received SyncedLedger.");
                     self.validations.adaptor_mut().add_ledger(synced_ledger);
                 }
                 PrimaryConsensusMessage::Validation(validation) => {
-                    info!("Received validation : {:?}.", validation);
+                    // info!("Received validation : {:?}.", validation);
                     self.process_validation(validation).await;
                 }
             }
@@ -124,7 +124,7 @@ impl Consensus {
                     (self.latest_ledger.id(), self.latest_ledger.seq()),
                     (preferred_id, preferred_seq)
                 );
-                self.state = ConsensusState::NotSynced;
+                // self.state = ConsensusState::NotSynced;
                 self.latest_ledger = self.validations.adaptor_mut().acquire(&preferred_id).await
                     .expect("ValidationsAdaptor did not have preferred ledger in cache.");
 
@@ -171,7 +171,6 @@ impl Consensus {
         //  that batch will be dropped and will never make it into a validated ledger. Ideally,
         //  that batch should be queued for the next ledger's consensus process.
         let batch_set = self.batch_pool.drain().collect();
-        info!("Proposing batch set: {:?}", batch_set);
         self.propose(batch_set).await;
     }
 
@@ -183,9 +182,11 @@ impl Consensus {
             info!("We don't have consensus :(");
             // threshold is the percentage of UNL members who need to propose the same set of batches
             let threshold = self.round.threshold();
+            info!("Threshold: {:?}", threshold);
             // This is the number of UNL members who need to propose the same set of batches based
             // on the threshold percentage.
             let num_nodes_threshold = (self.committee.authorities.len() as f32 * threshold).ceil() as u32;
+            info!("Num nodes needed: {:?}", num_nodes_threshold);
 
             // This will build a HashMap of (Digest, WorkerId) -> number of validators that proposed it,
             // then filter that HashMap to the (Digest, WorkerId)s that have a count > num_nodes_threshold
@@ -216,6 +217,7 @@ impl Consensus {
             self.node_id,
         );
 
+        info!("Proposing              {:?}", proposal);
         let signed_proposal = Arc::new(proposal.sign(&mut self.signature_service).await);
         self.proposals.insert(self.node_id, signed_proposal.clone());
         self.tx_primary.send(ConsensusPrimaryMessage::Proposal(signed_proposal)).await
@@ -224,11 +226,13 @@ impl Consensus {
     }
 
     fn on_proposal_received(&mut self, proposal: SignedProposal) {
+        info!("Received new proposal: {:?}", proposal.proposal);
         // The Primary will check the signature and make sure the proposal comes from
         // someone in our UNL before sending it to Consensus, therefore we do not need to
         // check here again. Additionally, the Primary will delay sending us a proposal until
         // it has synced all of the batches that it does not have in its local storage.
         if proposal.proposal.parent_id == self.latest_ledger.id() {
+            info!("Storing proposal {:?}", proposal.proposal);
             // Either insert the proposal if we haven't seen a proposal from this node,
             // or update an existing node's proposal if the given proposal's round is higher
             // than what we have in our map.
@@ -307,7 +311,7 @@ impl Consensus {
 
         #[cfg(feature = "benchmark")]
         for batch in &self.latest_ledger.batch_set {
-            // info!("Committed {:?} ", batch);
+            info!("Committed {:?} ", batch);
         }
     }
 

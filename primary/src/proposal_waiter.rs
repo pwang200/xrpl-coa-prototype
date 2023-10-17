@@ -105,7 +105,7 @@ impl ProposalWaiter {
                 Some(signed_proposal) = self.rx_network_proposal.recv() => {
                     //TODO verify sig
 
-                    debug!("Synching the payload of {:?}", signed_proposal);
+                    // debug!("Synching the payload of {:?}", signed_proposal);
                     let batches = signed_proposal.proposal.batches.clone();
 
                     let mut missing = false;

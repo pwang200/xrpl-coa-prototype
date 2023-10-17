@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 use async_recursion::async_recursion;
 use bytes::Bytes;
-use log::error;
+use log::{error, info};
 // use futures::stream::futures_unordered::FuturesUnordered;
 // use futures::stream::StreamExt as _;
 // use log::error;
@@ -107,18 +107,24 @@ impl ValidationWaiter {
     }
 
     async fn store_ledger(&mut self, ledger: Ledger) -> Option<(Digest, PublicKey)> {
+        // info!("Storing ledger {:?}", ledger.id);
+        // info!("ledger_dependencies: {:?}", self.ledger_dependencies);
         if ledger.ancestors.is_empty() || self.ledger_dependencies.get(&ledger.id).is_none() {
+            // info!("First none.");
             return None;
         }
 
         let parent = ledger.ancestors[0].clone();
+        // info!("Parent is {:?}", parent);
         match self.store.read(parent.to_vec()).await {
             Ok(Some(_)) => {
+                // info!("Read parent");
                 self.store.write(ledger.id.to_vec(), bincode::serialize(&ledger).unwrap()).await;
                 self.store_children(&ledger.id).await;
                 return None;
             }
             Ok(None) => {
+                // info!("Did not read parent.");
                 let (_, pk) = self.ledger_dependencies.get(&ledger.id).unwrap();
                 let pk = pk.clone();
                 // self.ledger_dependencies.entry(parent).or_insert_with(Vec::new).push(ledger);
@@ -138,7 +144,7 @@ impl ValidationWaiter {
                 return Some((parent, pk));
             }
             Err(e) => {
-                error!("{}", e);
+                error!("Failed to store ledger. {}", e);
                 return None;
             }
         }
@@ -233,10 +239,9 @@ impl ValidationWaiter {
                 },
 
                 Some(ledger) = self.rx_own_ledgers.recv() => {
-                    match self.store_ledger(ledger).await {
-                        Some(_) => panic!("Failed to send validation"),
-                        None => {}
-                    }
+                    //TODO check parent exist in DB
+                    self.store.write(ledger.id.to_vec(), bincode::serialize(&ledger).unwrap()).await;
+                    self.store_children(&ledger.id).await;
                 },
 
                 () = &mut timer => {
@@ -261,6 +266,7 @@ impl ValidationWaiter {
                         match entry {
                             Some(_) => {},
                             None => {
+                                // info!("Inserting {:?} into ledger_dependencies", digest);
                                 self.ledger_dependencies.insert(digest.clone(), (Vec::new(), pk.clone()));
                                 let address = self.committee
                                 .primary(&pk)
