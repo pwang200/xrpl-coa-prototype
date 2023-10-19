@@ -105,13 +105,13 @@ impl ProposalWaiter {
                 Some(signed_proposal) = self.rx_network_proposal.recv() => {
                     //TODO verify sig
 
-                    // debug!("Synching the payload of {:?}", signed_proposal);
-                    let batches = signed_proposal.proposal.batches.clone();
+                    // debug!("Synching the payload of {:?}", (signed_proposal.proposal.round, signed_proposal.proposal.node_id));
+                    let batches = &signed_proposal.proposal.batches;
 
                     let mut missing = false;
                     for (digest, worker_id) in batches.iter() {
                         let key = [digest.as_ref(), &worker_id.to_le_bytes()].concat();
-                        match self.store.read(key).await {
+                        match self.store.read(key).await { // TODO implement batch read
                             Ok(Some(_)) => {},
                             Ok(None) => {
                                 missing = true;
@@ -131,6 +131,7 @@ impl ProposalWaiter {
                         continue;
                     }
 
+                    // info!("Missing some batches for proposal {:?}.", (signed_proposal.proposal.round, signed_proposal.proposal.node_id));
                     let now = clock();
                     self.to_acquire.push_back((signed_proposal, now));
                 },
@@ -168,9 +169,9 @@ impl ProposalWaiter {
                         }
 
                         let (signed_proposal, _) = self.to_acquire.pop_front().unwrap();
-                        let proposal_id = signed_proposal.proposal.clone().compute_id();
+                        let proposal_id = signed_proposal.proposal.compute_id();
                         let author = signed_proposal.proposal.node_id.clone();
-                        let batches = signed_proposal.proposal.batches.clone();
+                        let batches = &signed_proposal.proposal.batches;
 
                         // Ensure we sync only once per proposal.
                         if self.pending.contains(&proposal_id) {

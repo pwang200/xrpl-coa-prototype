@@ -195,7 +195,7 @@ impl ValidationWaiter {
             tokio::select! {
                 Some(signed_validation) = self.rx_network_validations.recv() => {
                     //TODO verify sig
-                    info!("Waiter Received validation for ledger {:?}", signed_validation.validation.ledger_id);
+                    // info!("Waiter Received validation for ledger {:?}", signed_validation.validation.ledger_id);
                     let ledger_id = signed_validation.validation.ledger_id;
                     match self.store.read(ledger_id.to_vec()).await{
                         Ok(Some(_)) => {
