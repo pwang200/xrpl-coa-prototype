@@ -69,8 +69,8 @@ impl Proposal {
         }
     }
 
-    pub fn compute_id(self) -> Digest {
-        bincode::serialize(&(self.round, self.parent_id, self.ledger_index, self.batches, self.node_id)).unwrap().as_slice().digest()
+    pub fn compute_id(&self) -> Digest {
+        bincode::serialize(&(&self.round, &self.parent_id, &self.ledger_index, &self.batches, &self.node_id)).unwrap().as_slice().digest()
     }
 }
 

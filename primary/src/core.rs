@@ -97,8 +97,8 @@ impl Core {
     }
 
     async fn process_stored_batch(&mut self, batch: Digest, worker_id: WorkerId) {
-        #[cfg(feature = "benchmark")]
-        info!("Created {:?}", batch);
+        // #[cfg(feature = "benchmark")]
+        // info!("Created {:?}", batch);
 
         self.tx_primary_consensus
             .send(PrimaryConsensusMessage::Batch((batch, worker_id)))
@@ -121,7 +121,7 @@ impl Core {
 
     async fn process_validation(&mut self, validation: SignedValidation) {
         //-> DagResult<()> {
-        debug!("Processing {:?}", validation);
+        // debug!("Processing {:?}", validation);
         self.tx_primary_consensus
             .send(PrimaryConsensusMessage::Validation(validation))
             .await //TODO need to wait?

@@ -5,7 +5,7 @@ use config::{Committee, WorkerId};
 use crypto::{Digest, PublicKey};
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
-use log::{debug, error};
+use log::{debug, error, info};
 use network::SimpleSender;
 use primary::PrimaryWorkerMessage;
 use std::collections::HashMap;
@@ -109,6 +109,7 @@ impl Synchronizer {
                 // Handle primary's messages.
                 Some(message) = self.rx_message.recv() => match message {
                     PrimaryWorkerMessage::Synchronize(digests, target) => {
+                        info!("Worker received synchronize request for {:?}", (&digests, &target));
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .expect("Failed to measure time")
@@ -180,6 +181,7 @@ impl Synchronizer {
                 Some(result) = waiting.next() => match result {
                     Ok(Some(digest)) => {
                         // We got the batch, remove it from the pending list.
+                        info!("Worker synced batch {:?}", digest);
                         self.pending.remove(&digest);
                     },
                     Ok(None) => {

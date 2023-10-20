@@ -8,8 +8,9 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use tokio::sync::mpsc::{Receiver, Sender};
 use xrpl_consensus_core::{Ledger as LedgerTrait, NetClock};
-use xrpl_consensus_validations::{Adaptor, ValidationParams, Validations};
+use xrpl_consensus_validations::{Adaptor, ValidationError, ValidationParams, Validations};
 use xrpl_consensus_validations::arena_ledger_trie::ArenaLedgerTrie;
+
 use config::{Committee, WorkerId};
 use crypto::{Digest, PublicKey, SignatureService};
 use primary::{ConsensusPrimaryMessage, PrimaryConsensusMessage, SignedValidation, Validation};
@@ -85,6 +86,34 @@ impl Consensus {
         });
     }
 
+    fn new(
+        committee: Committee,
+        node_id: PublicKey,
+        signature_service: SignatureService,
+        adaptor: ValidationsAdaptor,
+        clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
+        rx_primary: Receiver<PrimaryConsensusMessage>,
+        tx_primary: Sender<ConsensusPrimaryMessage>,
+    ) -> Self {
+        let mut rng = OsRng {};
+        let now = clock.read().unwrap().now();
+        Self {
+            committee,
+            node_id,
+            latest_ledger: Ledger::make_genesis(),
+            round: 0.into(),
+            clock: clock.clone(),
+            state: ConsensusState::InitialWait(now),
+            proposals: Default::default(),
+            batch_pool: HashSet::new(),
+            validations: Validations::new(ValidationParams::default(), adaptor, clock),
+            validation_cookie: rng.next_u64(),
+            signature_service,
+            rx_primary,
+            tx_primary,
+        }
+    }
+
     async fn run(&mut self) {
         while let Some(message) = self.rx_primary.recv().await {
             match message {
@@ -107,7 +136,7 @@ impl Consensus {
                     self.validations.adaptor_mut().add_ledger(synced_ledger);
                 }
                 PrimaryConsensusMessage::Validation(validation) => {
-                    info!("Consensus Received validation : {:?}.", validation);
+                    // info!("Consensus Received validation : {:?}.", validation);
                     self.process_validation(validation).await;
                 }
             }
@@ -116,9 +145,10 @@ impl Consensus {
 
     async fn on_timeout(&mut self) {
         if let Some((preferred_seq, preferred_id)) = self.validations.get_preferred(&self.latest_ledger) {
-            info!("Preferred branch returned something.");
             if preferred_id != self.latest_ledger.id() {
-                info!("We're not on the right branch.");
+                if self.latest_ledger.ancestors[0] == preferred_id {
+                    error!("We just switched to {:?}'s parent {:?}", self.latest_ledger.id, preferred_id);
+                }
                 warn!(
                     "Not on preferred ledger. We are on {:?} and preferred is {:?}",
                     (self.latest_ledger.id(), self.latest_ledger.seq()),
@@ -127,7 +157,6 @@ impl Consensus {
 
                 self.latest_ledger = self.validations.adaptor_mut().acquire(&preferred_id).await
                     .expect("ValidationsAdaptor did not have preferred ledger in cache.");
-
             }
         }
 
@@ -171,7 +200,12 @@ impl Consensus {
         //  it to the next proposal round because not enough validators had the batch in their proposal,
         //  that batch will be dropped and will never make it into a validated ledger. Ideally,
         //  that batch should be queued for the next ledger's consensus process.
-        let batch_set = self.batch_pool.drain().collect();
+        let batch_set: HashSet<(Digest, WorkerId)> = self.batch_pool.drain().collect();
+
+        info!(
+            "Proposing first batch set"/*,
+            Self::truncate_batchset(&batch_set)*/
+        );
         self.propose(batch_set).await;
     }
 
@@ -205,8 +239,21 @@ impl Consensus {
                 .map(|(digest, _)| digest)
                 .collect();
 
+            // let trunc_batch_set = Self::truncate_batchset(&new_proposal_set);
+            info!(
+                "Reproposing batch set w len: {:?}",
+                new_proposal_set.len()
+            );
             self.propose(new_proposal_set).await;
         }
+    }
+
+    fn truncate_batchset(batch_set: &HashSet<(Digest, WorkerId)>) -> Vec<String> {
+        let mut trunc_batch_set: Vec<String> = batch_set.iter()
+            .map(|(digest, _)| base64::encode(&digest.0[..5]))
+            .collect();
+        trunc_batch_set.sort();
+        trunc_batch_set
     }
 
     async fn propose(&mut self, batch_set: HashSet<(Digest, WorkerId)>) {
@@ -218,7 +265,7 @@ impl Consensus {
             self.node_id,
         );
 
-        info!("Proposing              {:?}", proposal);
+        // info!("Proposing              {:?}", proposal);
         let signed_proposal = Arc::new(proposal.sign(&mut self.signature_service).await);
         self.proposals.insert(self.node_id, signed_proposal.clone());
         self.tx_primary.send(ConsensusPrimaryMessage::Proposal(signed_proposal)).await
@@ -227,7 +274,7 @@ impl Consensus {
     }
 
     fn on_proposal_received(&mut self, proposal: SignedProposal) {
-        info!("Received new proposal: {:?}", proposal.proposal);
+        info!("Received new proposal: {:?}", (proposal.proposal.node_id, proposal.proposal.parent_id, proposal.proposal.round, proposal.proposal.batches.len()));
         // The Primary will check the signature and make sure the proposal comes from
         // someone in our UNL before sending it to Consensus, therefore we do not need to
         // check here again. Additionally, the Primary will delay sending us a proposal until
@@ -292,8 +339,18 @@ impl Consensus {
         // in its cache or else it will panic.
         self.validations.adaptor_mut().add_ledger(new_ledger.clone());
 
+        info!("About to add our own validation for {:?}", new_ledger.id);
         if let Err(e) = self.validations.try_add(&self.node_id, &signed_validation).await {
-            error!("{:?} could not be added. Error: {:?}", signed_validation, e);
+            match e {
+                ValidationError::ConflictingSignTime(e) => {
+                    error!("{:?} could not be added due to different sign times. \
+                    This could happen if we build a ledger with no batches then mistakenly switch\
+                     to the current ledger's parent during branch selection and then build another \
+                     ledger with no batches based on the parent because the hashes of both ledgers \
+                     will be the same. Error.", signed_validation);
+                }
+                _ => { error!("{:?} could not be added. Error: {:?}", signed_validation, e); }
+            }
             return;
         }
 
@@ -307,11 +364,11 @@ impl Consensus {
 
         self.reset();
 
-        info!("Did a new ledger {:?}.", self.latest_ledger);
+        info!("Did a new ledger {:?}. Num Batches {:?}", (self.latest_ledger.id, self.latest_ledger.seq()), self.latest_ledger.batch_set.len());
 
         #[cfg(feature = "benchmark")]
         for batch in &self.latest_ledger.batch_set {
-            info!("Committed {:?} ", batch);
+            // info!("Committed {:?} ", batch);
         }
     }
 
@@ -340,9 +397,105 @@ impl Consensus {
     }
 
     async fn process_validation(&mut self, validation: SignedValidation) {
-        info!("Received validation for ({:?}, {:?})", validation.validation.ledger_id, validation.validation.seq);
+        info!("Received validation from {:?} for ({:?}, {:?})", validation.validation.node_id, validation.validation.ledger_id, validation.validation.seq);
         if let Err(e) = self.validations.try_add(&validation.validation.node_id, &validation).await {
             error!("{:?} could not be added. Error: {:?}", validation, e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::iter::FromIterator;
+    use env_logger::Env;
+    use tokio::sync::mpsc::channel;
+    use xrpl_consensus_core::WallNetClock;
+
+    use config::{Import, KeyPair};
+    use crypto::Hash;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_branch_selection_selecting_parent() {
+        let mut logger = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
+
+        logger.init();
+
+        let keypair = KeyPair::new();
+        let keypair2 = KeyPair::new();
+        let clock = Arc::new(RwLock::new(WallNetClock));
+        let (tx_primary_consensus, rx_primary_consensus) = channel(1000);
+        let (tx_consensus_primary, rx_consensus_primary) = channel(1000);
+        let mut sig_service = SignatureService::new(keypair.secret);
+        let mut consensus = Consensus::new(
+            Committee::import("/Users/nkramer/Documents/dev/nk/xrpl-coa-prototype/benchmark/.committee.json").unwrap(),
+            keypair.name,
+            sig_service.clone(),
+            ValidationsAdaptor::new(clock.clone()),
+            clock.clone(),
+            rx_primary_consensus,
+            tx_consensus_primary
+        );
+
+        consensus.proposals.insert(keypair.name.clone(), Arc::new(
+            Proposal::new(
+                ConsensusRound::from(1),
+                Ledger::make_genesis().id,
+                2,
+                HashSet::from_iter(vec![([0u8].as_slice().digest(), 1)].into_iter()),
+                keypair.name
+            ).sign(&mut sig_service).await
+        ));
+
+        consensus.build_ledger().await;
+
+        consensus.process_validation(
+            Validation::new(
+                2,
+                consensus.latest_ledger.id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair2.name,
+                keypair2.name,
+                true,
+                true,
+                1
+            ).sign(&mut SignatureService::new(keypair2.secret)).await
+        ).await;
+
+        consensus.proposals.insert(keypair.name.clone(), Arc::new(
+            Proposal::new(
+                ConsensusRound::from(1),
+                consensus.latest_ledger.id,
+                3,
+                HashSet::from_iter(vec![([1u8].as_slice().digest(), 1)].into_iter()),
+                keypair.name
+            ).sign(&mut sig_service).await
+        ));
+
+        consensus.build_ledger().await;
+
+        consensus.on_timeout().await;
+        /*tx_primary_consensus.send(PrimaryConsensusMessage::Timeout).await.expect("");
+        tx_primary_consensus.send(PrimaryConsensusMessage::Proposal(
+            Proposal::new(
+                ConsensusRound::from(1),
+                Ledger::make_genesis().id,
+                2,
+                HashSet::from_iter(vec![([0u8].as_slice().digest(), 1)].into_iter()),
+                keypair2.name
+            ).sign(&mut sig_service).await
+        )).await.expect("TODO: panic message");
+
+        tx_primary_consensus.send(PrimaryConsensusMessage::Proposal(
+            Proposal::new(
+                ConsensusRound::from(1),
+                Ledger::make_genesis().id,
+                2,
+                HashSet::from_iter(vec![([0u8].as_slice().digest(), 1)].into_iter()),
+                keypair3.name
+            ).sign(&mut sig_service).await
+        )).await.expect("TODO: panic message");*/
     }
 }

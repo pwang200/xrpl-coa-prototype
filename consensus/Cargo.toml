@@ -16,9 +16,10 @@ xrpl-consensus-validations = { path = "../../xrpl-consensus-rs/xrpl-consensus-va
 
 rand = "0.7.3"
 async-trait = "0.1.73"
-
+base64 = "0.21.4"
 [dev-dependencies]
 rand = "0.7.3"
+env_logger = "0.7.1"
 
 [features]
 benchmark = []

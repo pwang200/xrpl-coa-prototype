@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
+use log::info;
 //use std::path::Ancestors;
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +64,8 @@ impl xrpl_consensus_core::Ledger for Ledger {
             }
 
             let diff = self.seq() - seq;
-            return *self.ancestors.get(self.ancestors.len() - diff as usize).unwrap();
+            // info!("Ledger {:?} ancestors: {:?}. Requested seq = {:?}", (self.id, self.seq), self.ancestors, seq);
+            return *self.ancestors.get(self.ancestors.len() - diff as usize - 1).unwrap();
         }
 
         Digest::default()

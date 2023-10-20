@@ -1,5 +1,6 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use log::info;
 use tokio::sync::mpsc::{channel, Sender};
 use tokio::sync::oneshot;
 
@@ -16,6 +17,7 @@ type Value = Vec<u8>;
 pub enum StoreCommand {
     Write(Key, Value),
     Read(Key, oneshot::Sender<StoreResult<Option<Value>>>),
+    BatchRead(HashSet<Key>, oneshot::Sender<StoreResult<Vec<Value>>>),
     NotifyRead(Key, oneshot::Sender<StoreResult<Value>>),
 }
 
@@ -56,6 +58,13 @@ impl Store {
                             }
                         }
                     }
+                    StoreCommand::BatchRead(keys, sender) => {
+                        let keys_len = keys.len();
+                        info!("Store about to read {:?} keys", keys_len);
+                        let response = db.multi_get(keys);
+                        info!("Store finished reading {:?} keys", keys_len);
+                        let _ = sender.send(response);
+                    }
                 }
             }
         });
@@ -76,6 +85,16 @@ impl Store {
         receiver
             .await
             .expect("Failed to receive reply to Read command from store")
+    }
+
+    pub async fn batch_read(&mut self, keys: HashSet<Key>) -> StoreResult<Vec<Value>> {
+        let (sender, receiver) = oneshot::channel();
+        if let Err(e) = self.channel.send(StoreCommand::BatchRead(keys, sender)).await {
+            panic!("Failed to send BatchRead command to store: {}", e);
+        }
+        receiver
+            .await
+            .expect("Failed to receive reply to BatchRead command from store")
     }
 
     pub async fn notify_read(&mut self, key: Key) -> StoreResult<Value> {

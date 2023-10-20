@@ -10,6 +10,7 @@ use futures::stream::StreamExt as _;
 use log::{debug, error, info};
 use network::SimpleSender;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::os::unix::raw::ino_t;
 use std::time::{SystemTime, UNIX_EPOCH};
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -118,7 +119,7 @@ impl ProposalWaiter {
                 Some(signed_proposal) = self.rx_network_proposal.recv() => {
                     //TODO verify sig
 
-                    // debug!("Synching the payload of {:?}", (signed_proposal.proposal.round, signed_proposal.proposal.node_id));
+                    debug!("Synching the proposal of {:?}", (signed_proposal.proposal.parent_id, signed_proposal.proposal.round, signed_proposal.proposal.node_id));
                     let batches = &signed_proposal.proposal.batches;
 
                     let mut missing = false;
@@ -137,6 +138,8 @@ impl ProposalWaiter {
                             }
                         }
                     }
+
+                    // info!("Time to read batches: {:?}", Instant::now().duration_since(now));
 
                     if !missing {
                         self.tx_loopback_proposal
@@ -167,7 +170,8 @@ impl ProposalWaiter {
                 Some(result) = waiting.next() => match result {
                     Ok(Some(signed_proposal)) => {
                         let signed_proposal : SignedProposal = signed_proposal;
-                        let pid = signed_proposal.proposal.clone().compute_id();//TODO clone
+                        info!("Synced proposal {:?}", (signed_proposal.proposal.node_id, signed_proposal.proposal.parent_id, signed_proposal.proposal.round));
+                        let pid = signed_proposal.proposal.compute_id();//TODO clone
                         let _ = self.pending.remove(&pid);
                         for (x, _) in & signed_proposal.proposal.batches {
                             let _ = self.batch_requests.remove(x);
@@ -206,6 +210,8 @@ impl ProposalWaiter {
                             continue;
                         }
 
+                        let now = Instant::now();
+
                         let mut missing = HashMap::new();
                         for (digest, worker_id) in batches.iter() {
                             if ! self.batch_cache.contains(digest) {
@@ -222,6 +228,11 @@ impl ProposalWaiter {
                             }
                         }
 
+                        /*info!(
+                            "Proposal {:?} missing {:?}",
+                            (author, signed_proposal.proposal.parent_id, signed_proposal.proposal.round),
+                            missing.keys().collect::<Vec<&Digest>>()
+                        );*/
                         if missing.is_empty() {
                             self.tx_loopback_proposal
                             .send(signed_proposal)
@@ -256,7 +267,7 @@ impl ProposalWaiter {
                         }
                         for (worker_id, digests) in requires_sync {
                             let address = self.committee
-                            .worker(&author, &worker_id)
+                            .worker(&self.name, &worker_id)
                             .expect("Author of valid Proposal is not in the committee")
                             .primary_to_worker;
                             let message = PrimaryWorkerMessage::Synchronize(digests, author);

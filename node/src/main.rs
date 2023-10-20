@@ -1,3 +1,4 @@
+use std::env;
 use std::sync::{Arc, RwLock};
 
 // Copyright(C) Facebook, Inc. and its affiliates.
@@ -23,6 +24,7 @@ pub const CHANNEL_CAPACITY: usize = 1_000;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    env::set_var("RUST_BACKTRACE", "1");
     let matches = App::new(crate_name!())
         .version(crate_version!())
         .about("A research implementation of Narwhal and Tusk.")
