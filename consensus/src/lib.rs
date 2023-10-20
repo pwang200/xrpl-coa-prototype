@@ -203,7 +203,7 @@ impl Consensus {
         let batch_set: HashSet<(Digest, WorkerId)> = self.batch_pool.drain().collect();
 
         info!(
-            "Proposing first batch set"/*,
+            "Proposing first batch set w len {:?}", batch_set.len()/*,
             Self::truncate_batchset(&batch_set)*/
         );
         self.propose(batch_set).await;
@@ -239,6 +239,17 @@ impl Consensus {
                 .map(|(digest, _)| digest)
                 .collect();
 
+            // Any batches that were included in our last proposal that do not make it to the next
+            // proposal will be put back into the batch pool. This prevents batches that have not
+            // been synced yet from ever getting into a ledger.
+            let to_queue = self.proposals.get(&self.node_id).unwrap().proposal.batches.iter()
+                .filter(|batch| !new_proposal_set.contains(batch))
+                .collect::<Vec<&(Digest, WorkerId)>>();
+            info!("Requeuing {:?} batches", to_queue.len());
+            self.batch_pool.extend(
+                self.proposals.get(&self.node_id).unwrap().proposal.batches.iter()
+                    .filter(|batch| !new_proposal_set.contains(batch))
+            );
             // let trunc_batch_set = Self::truncate_batchset(&new_proposal_set);
             info!(
                 "Reproposing batch set w len: {:?}",
@@ -435,7 +446,7 @@ mod tests {
             ValidationsAdaptor::new(clock.clone()),
             clock.clone(),
             rx_primary_consensus,
-            tx_consensus_primary
+            tx_consensus_primary,
         );
 
         consensus.proposals.insert(keypair.name.clone(), Arc::new(
@@ -444,7 +455,7 @@ mod tests {
                 Ledger::make_genesis().id,
                 2,
                 HashSet::from_iter(vec![([0u8].as_slice().digest(), 1)].into_iter()),
-                keypair.name
+                keypair.name,
             ).sign(&mut sig_service).await
         ));
 
@@ -460,7 +471,7 @@ mod tests {
                 keypair2.name,
                 true,
                 true,
-                1
+                1,
             ).sign(&mut SignatureService::new(keypair2.secret)).await
         ).await;
 
@@ -470,7 +481,7 @@ mod tests {
                 consensus.latest_ledger.id,
                 3,
                 HashSet::from_iter(vec![([1u8].as_slice().digest(), 1)].into_iter()),
-                keypair.name
+                keypair.name,
             ).sign(&mut sig_service).await
         ));
 
