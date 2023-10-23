@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
@@ -22,11 +22,9 @@ use crate::adaptor::ValidationsAdaptor;
 pub mod adaptor;
 
 pub const INITIAL_WAIT: Duration = Duration::from_secs(2);
+pub const MAX_PROPOSAL_SIZE: usize = 100_000;
 
 pub enum ConsensusState {
-    // TODO: If the primary is taking care of preferred branch selection and dealing with
-    //  syncing and switching if we are not on the preferred branch, do we really need this
-    //  here, or should the primary keep track of if it's synced or not?
     NotSynced,
     InitialWait(SystemTime),
     Deliberating,
@@ -44,7 +42,7 @@ pub struct Consensus {
     clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
     state: ConsensusState,
     proposals: HashMap<PublicKey, Arc<SignedProposal>>,
-    batch_pool: HashSet<(Digest, WorkerId)>,
+    batch_pool: VecDeque<(Digest, WorkerId)>,
     validations: Validations<ValidationsAdaptor, ArenaLedgerTrie<Ledger>>,
     validation_cookie: u64,
     signature_service: SignatureService,
@@ -74,7 +72,7 @@ impl Consensus {
                 clock: clock.clone(),
                 state: ConsensusState::InitialWait(now),
                 proposals: Default::default(),
-                batch_pool: HashSet::new(),
+                batch_pool: VecDeque::new(),
                 validations: Validations::new(ValidationParams::default(), adaptor, clock),
                 validation_cookie: rng.next_u64(),
                 signature_service,
@@ -105,7 +103,7 @@ impl Consensus {
             clock: clock.clone(),
             state: ConsensusState::InitialWait(now),
             proposals: Default::default(),
-            batch_pool: HashSet::new(),
+            batch_pool: VecDeque::new(),
             validations: Validations::new(ValidationParams::default(), adaptor, clock),
             validation_cookie: rng.next_u64(),
             signature_service,
@@ -125,7 +123,9 @@ impl Consensus {
                     // Store any batches that come from the primary in batch_pool to be included
                     // in a future proposal.
                     // info!("Received batch {:?}.", batch.0);
-                    self.batch_pool.insert(batch);
+                    if !self.batch_pool.contains(&batch) {
+                        self.batch_pool.push_front(batch);
+                    }
                 }
                 PrimaryConsensusMessage::Proposal(proposal) => {
                     // info!("Received proposal: {:?}", proposal);
@@ -195,12 +195,11 @@ impl Consensus {
     async fn propose_first(&mut self) {
         self.state = ConsensusState::Deliberating;
 
-        // TODO: Consider redesigning the batch pool to deal with batches that were disputed
-        //  and don't make it to the next round of proposals. Currently, if a batch does not make
-        //  it to the next proposal round because not enough validators had the batch in their proposal,
-        //  that batch will be dropped and will never make it into a validated ledger. Ideally,
-        //  that batch should be queued for the next ledger's consensus process.
-        let batch_set: HashSet<(Digest, WorkerId)> = self.batch_pool.drain().collect();
+        let batch_set: HashSet<(Digest, WorkerId)> = if self.batch_pool.len() > MAX_PROPOSAL_SIZE {
+            self.batch_pool.drain(self.batch_pool.len() - MAX_PROPOSAL_SIZE..).collect()
+        } else {
+            self.batch_pool.drain(..).collect()
+        };
 
         info!(
             "Proposing first batch set w len {:?}", batch_set.len()/*,
@@ -222,6 +221,17 @@ impl Consensus {
             // on the threshold percentage.
             let num_nodes_threshold = (self.committee.authorities.len() as f32 * threshold).ceil() as u32;
             info!("Num nodes needed: {:?}", num_nodes_threshold);
+
+            let num_proposals_for_this_ledger = self.proposals.iter()
+                .map(|p| p.1)
+                .filter(|p| p.proposal.parent_id == self.latest_ledger.id)
+                // .filter(|p| p.proposal.round == self.round - 1)
+                .count();
+
+            if num_proposals_for_this_ledger < num_nodes_threshold as usize {
+                info!("We don't have enough proposals for child of ledger {:?}. Deferring to next round.", self.latest_ledger.id);
+                return
+            }
 
             // This will build a HashMap of (Digest, WorkerId) -> number of validators that proposed it,
             // then filter that HashMap to the (Digest, WorkerId)s that have a count > num_nodes_threshold
@@ -379,7 +389,7 @@ impl Consensus {
 
         #[cfg(feature = "benchmark")]
         for batch in &self.latest_ledger.batch_set {
-            // info!("Committed {:?} ", batch);
+            info!("Committed {:?} ", batch);
         }
     }
 

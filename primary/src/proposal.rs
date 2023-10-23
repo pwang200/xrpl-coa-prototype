@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::ops::Sub;
 //use std::convert::TryInto;
 use serde::{Deserialize, Serialize};
 use xrpl_consensus_core::LedgerIndex;
@@ -34,6 +35,21 @@ impl ConsensusRound {
     }
 }
 
+impl Sub for ConsensusRound {
+    type Output = ConsensusRound;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        ConsensusRound(self.0 - rhs.0)
+    }
+}
+
+impl Sub<u8> for ConsensusRound {
+    type Output = ConsensusRound;
+
+    fn sub(self, rhs: u8) -> Self::Output {
+        ConsensusRound(self.0 - rhs)
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proposal {
