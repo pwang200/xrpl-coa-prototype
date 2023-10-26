@@ -394,8 +394,10 @@ impl Consensus {
     }
 
     fn execute(&self) -> Ledger {
-        let mut new_ancestors = vec![self.latest_ledger.id()];
-        new_ancestors.extend_from_slice(self.latest_ledger.ancestors.as_slice());
+        let mut new_ancestors = self.latest_ledger.ancestors.clone();
+        new_ancestors.push(self.latest_ledger.id());
+        /*let mut new_ancestors = vec![self.latest_ledger.id()];
+        new_ancestors.extend_from_slice(self.latest_ledger.ancestors.as_slice());*/
         let our_proposal = self.proposals.get(&self.node_id)
             .expect("Could not find our own proposal");
 
@@ -424,7 +426,7 @@ impl Consensus {
         }
     }
 }
-/*
+
 #[cfg(test)]
 mod tests {
     use std::iter::FromIterator;
@@ -519,5 +521,149 @@ mod tests {
             ).sign(&mut sig_service).await
         )).await.expect("TODO: panic message");*/
     }
+
+    #[tokio::test]
+    async fn test_branch_selection_selecting_child() {
+        let mut logger = env_logger::Builder::from_env(Env::default().default_filter_or("info"));
+
+        logger.init();
+
+        let keypair = KeyPair::new();
+        let keypair2 = KeyPair::new();
+        let keypair3 = KeyPair::new();
+        let keypair4 = KeyPair::new();
+        let keypair5 = KeyPair::new();
+        let clock = Arc::new(RwLock::new(WallNetClock));
+        let (tx_primary_consensus, rx_primary_consensus) = channel(1000);
+        let (tx_consensus_primary, rx_consensus_primary) = channel(1000);
+        let mut sig_service = SignatureService::new(keypair.secret);
+        let mut sig_service2 = SignatureService::new(keypair2.secret);
+        let mut sig_service3 = SignatureService::new(keypair3.secret);
+        let mut sig_service4 = SignatureService::new(keypair4.secret);
+        let mut sig_service5 = SignatureService::new(keypair5.secret);
+        let mut consensus = Consensus::new(
+            Committee::import("/Users/nkramer/Documents/dev/nk/xrpl-coa-prototype/benchmark/.committee.json").unwrap(),
+            keypair.name,
+            sig_service.clone(),
+            ValidationsAdaptor::new(clock.clone()),
+            clock.clone(),
+            rx_primary_consensus,
+            tx_consensus_primary,
+        );
+
+        let ledger2_id: Digest = [2u8].as_slice().digest();
+        consensus.latest_ledger = Ledger::new(
+            2,
+            vec![Ledger::make_genesis().id],
+            HashSet::new()
+        );
+        consensus.latest_ledger.id = ledger2_id;
+        consensus.validations.adaptor_mut().add_ledger(consensus.latest_ledger.clone());
+        consensus.process_validation(
+            Validation::new(
+                2,
+                ledger2_id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair.name,
+                keypair.name,
+                true,
+                true,
+                1,
+            ).sign(&mut sig_service).await
+        ).await;
+
+        consensus.process_validation(
+            Validation::new(
+                2,
+                ledger2_id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair2.name,
+                keypair2.name,
+                true,
+                true,
+                1,
+            ).sign(&mut sig_service2).await
+        ).await;
+
+        consensus.process_validation(
+            Validation::new(
+                2,
+                ledger2_id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair3.name,
+                keypair3.name,
+                true,
+                true,
+                1,
+            ).sign(&mut sig_service3).await
+        ).await;
+
+        consensus.process_validation(
+            Validation::new(
+                2,
+                ledger2_id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair4.name,
+                keypair4.name,
+                true,
+                true,
+                1,
+            ).sign(&mut sig_service4).await
+        ).await;
+
+        consensus.process_validation(
+            Validation::new(
+                2,
+                ledger2_id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair5.name,
+                keypair5.name,
+                true,
+                true,
+                1,
+            ).sign(&mut sig_service5).await
+        ).await;
+
+        let mut ledger3 = Ledger::new(
+            3,
+            vec![ledger2_id, Ledger::make_genesis().id],
+            HashSet::new()
+        );
+        ledger3.id = [3u8].as_slice().digest();
+        consensus.validations.adaptor_mut().add_ledger(ledger3.clone());
+        consensus.process_validation(
+            Validation::new(
+                3,
+                ledger3.id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair2.name,
+                keypair2.name,
+                true,
+                true,
+                1,
+            ).sign(&mut sig_service2).await
+        ).await;
+
+        consensus.process_validation(
+            Validation::new(
+                3,
+                ledger3.id,
+                clock.read().unwrap().now(),
+                clock.read().unwrap().now(),
+                keypair3.name,
+                keypair3.name,
+                true,
+                true,
+                1,
+            ).sign(&mut sig_service3).await
+        ).await;
+
+        consensus.on_timeout().await;
+    }
 }
- */
