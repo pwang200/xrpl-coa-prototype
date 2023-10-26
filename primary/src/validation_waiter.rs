@@ -141,7 +141,7 @@ impl ValidationWaiter {
             return None;
         }
 
-        let parent = ledger.ancestors[0].clone();
+        let parent = ledger.ancestors.last().unwrap().clone();
         match self.store.read(parent.to_vec()).await {
             Ok(Some(_)) => {
                 self.store_ledger(ledger, false).await;

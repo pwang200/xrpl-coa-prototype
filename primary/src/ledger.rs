@@ -63,13 +63,14 @@ impl xrpl_consensus_core::Ledger for Ledger {
                 return self.id();
             }
 
-            if seq == 0 {
+            /*if seq == 0 {
                 return Ledger::make_genesis().id
-            }
+            }*/
 
             let diff = self.seq() - seq;
             // info!("Ledger {:?} ancestors: {:?}. Requested seq = {:?}", (self.id, self.seq), self.ancestors, seq);
-            let digest = self.ancestors.get(self.ancestors.len() - diff as usize - 1);
+            let digest = self.ancestors.get(self.ancestors.len() - diff as usize);
+            // let digest = self.ancestors.get(self.ancestors.len() - diff as usize - 1);
             if digest.is_none() {
                 error!(
                     "Ledger about to panic. id = {:?}, seq {:?}, ancestors: {:?}. Requested ancestor seq = {:?}",

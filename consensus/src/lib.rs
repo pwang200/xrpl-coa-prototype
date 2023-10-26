@@ -394,8 +394,10 @@ impl Consensus {
     }
 
     fn execute(&self) -> Ledger {
-        let mut new_ancestors = vec![self.latest_ledger.id()];
-        new_ancestors.extend_from_slice(self.latest_ledger.ancestors.as_slice());
+        let mut new_ancestors = self.latest_ledger.ancestors.clone();
+        new_ancestors.push(self.latest_ledger.id());
+        /*let mut new_ancestors = vec![self.latest_ledger.id()];
+        new_ancestors.extend_from_slice(self.latest_ledger.ancestors.as_slice());*/
         let our_proposal = self.proposals.get(&self.node_id)
             .expect("Could not find our own proposal");
 
@@ -424,7 +426,7 @@ impl Consensus {
         }
     }
 }
-/*
+
 #[cfg(test)]
 mod tests {
     use std::iter::FromIterator;
@@ -520,4 +522,3 @@ mod tests {
         )).await.expect("TODO: panic message");*/
     }
 }
- */
