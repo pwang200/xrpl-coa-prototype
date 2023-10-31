@@ -1,7 +1,7 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::processor::SerializedBatchMessage;
 use config::{Committee, Stake};
-use crypto::PublicKey;
+use crypto::{Hash, PublicKey};
 use futures::stream::futures_unordered::FuturesUnordered;
 use futures::stream::StreamExt as _;
 use network::CancelHandler;

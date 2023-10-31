@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::{Debug, Formatter};
 use std::ops::Sub;
 //use std::convert::TryInto;
 use serde::{Deserialize, Serialize};
@@ -51,13 +52,19 @@ impl Sub<u8> for ConsensusRound {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Proposal {
     pub round: ConsensusRound,
     pub parent_id: Digest,
     ledger_index: LedgerIndex,
     pub batches: HashSet<(Digest, WorkerId)>,
     pub node_id: PublicKey
+}
+
+impl Debug for Proposal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "node={:?}, parent={:?}, seq={:?}, round={:?}, num_batches={:?}", self.node_id, self.parent_id, self.ledger_index, self.round, self.batches.len())
+    }
 }
 
 impl Proposal {
@@ -110,10 +117,16 @@ impl Proposal {
 //     }
 // }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SignedProposal {
     pub proposal: Proposal,
     signature: Signature
+}
+
+impl Debug for SignedProposal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.proposal)
+    }
 }
 
 impl SignedProposal {

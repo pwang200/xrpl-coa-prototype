@@ -119,7 +119,7 @@ impl ProposalWaiter {
                 Some(signed_proposal) = self.rx_network_proposal.recv() => {
                     //TODO verify sig
 
-                    debug!("Synching the proposal of {:?}", (signed_proposal.proposal.parent_id, signed_proposal.proposal.round, signed_proposal.proposal.node_id));
+                    debug!("Synching proposal {:?}", signed_proposal);
                     let batches = &signed_proposal.proposal.batches;
 
                     let mut missing = false;
@@ -170,7 +170,7 @@ impl ProposalWaiter {
                 Some(result) = waiting.next() => match result {
                     Ok(Some(signed_proposal)) => {
                         let signed_proposal : SignedProposal = signed_proposal;
-                        info!("Synced proposal {:?}", (signed_proposal.proposal.node_id, signed_proposal.proposal.parent_id, signed_proposal.proposal.round));
+                        info!("Synced proposal {:?}", signed_proposal);
                         let pid = signed_proposal.proposal.compute_id();//TODO clone
                         let _ = self.pending.remove(&pid);
                         for (x, _) in & signed_proposal.proposal.batches {

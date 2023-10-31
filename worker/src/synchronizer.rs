@@ -181,7 +181,7 @@ impl Synchronizer {
                 Some(result) = waiting.next() => match result {
                     Ok(Some(digest)) => {
                         // We got the batch, remove it from the pending list.
-                        info!("Worker synced batch {:?}", digest);
+                        // info!("Worker synced batch {:?}", digest);
                         self.pending.remove(&digest);
                     },
                     Ok(None) => {

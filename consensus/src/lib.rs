@@ -295,7 +295,7 @@ impl Consensus {
     }
 
     fn on_proposal_received(&mut self, proposal: SignedProposal) {
-        info!("Received new proposal: {:?}", (proposal.proposal.node_id, proposal.proposal.parent_id, proposal.proposal.round, proposal.proposal.batches.len()));
+        info!("Received new proposal: {:?}", proposal);
         // The Primary will check the signature and make sure the proposal comes from
         // someone in our UNL before sending it to Consensus, therefore we do not need to
         // check here again. Additionally, the Primary will delay sending us a proposal until

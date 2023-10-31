@@ -20,7 +20,7 @@ use store::Store;
 use worker::Worker;
 
 /// The default channel capacity.
-pub const CHANNEL_CAPACITY: usize = 1_000;
+pub const CHANNEL_CAPACITY: usize = 1_000_000;
 
 #[tokio::main]
 async fn main() -> Result<()> {
