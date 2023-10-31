@@ -5,6 +5,7 @@ use log::{error, info};
 use serde::{Deserialize, Serialize};
 
 use xrpl_consensus_core::LedgerIndex;
+use config::WorkerId;
 //use config::WorkerId;
 
 use crypto::{Digest, Hash};
@@ -15,7 +16,7 @@ pub struct Ledger {
     seq: LedgerIndex,
     /// Ordered by latest -> oldest, ie the first element will be this ledger's parent.
     pub ancestors: Vec<Digest>,
-    pub batch_set: Vec<Digest>,
+    pub batch_set: Vec<(Digest, WorkerId)>,
 }
 
 impl Display for Ledger {
@@ -25,8 +26,8 @@ impl Display for Ledger {
 }
 
 impl Ledger {
-    pub fn new(seq: LedgerIndex, ancestors: Vec<Digest>, batch_set: HashSet<Digest>) -> Self {
-        let mut ordered_set: Vec<Digest> = batch_set.into_iter()
+    pub fn new(seq: LedgerIndex, ancestors: Vec<Digest>, batch_set: HashSet<(Digest, WorkerId)>) -> Self {
+        let mut ordered_set: Vec<(Digest, WorkerId)> = batch_set.into_iter()
             .collect();
         ordered_set.sort();
         Self {
@@ -37,7 +38,7 @@ impl Ledger {
         }
     }
 
-    pub fn compute_id(seq: LedgerIndex, ancestors: &Vec<Digest>, batch_set: &Vec<Digest>) -> Digest {
+    pub fn compute_id(seq: LedgerIndex, ancestors: &Vec<Digest>, batch_set: &Vec<(Digest, WorkerId)>) -> Digest {
         bincode::serialize(&(seq, ancestors, batch_set)).unwrap().as_slice().digest()
     }
 

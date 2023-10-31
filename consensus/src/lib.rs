@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::collections::hash_map::Entry;
+use std::ops::Sub;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
@@ -43,6 +44,8 @@ pub struct Consensus {
     state: ConsensusState,
     proposals: HashMap<Digest, HashMap<PublicKey, Arc<SignedProposal>>>,
     batch_pool: VecDeque<(Digest, WorkerId)>,
+    negative_pool: HashSet<(Digest, WorkerId)>,
+    //TODO cleanup
     validations: Validations<ValidationsAdaptor, ArenaLedgerTrie<Ledger>>,
     validation_cookie: u64,
     signature_service: SignatureService,
@@ -75,6 +78,7 @@ impl Consensus {
                 state: ConsensusState::InitialWait(now),
                 proposals: Default::default(),
                 batch_pool: VecDeque::new(),
+                negative_pool: Default::default(),
                 validations: Validations::new(ValidationParams::default(), adaptor, clock),
                 validation_cookie: rng.next_u64(),
                 signature_service,
@@ -108,6 +112,7 @@ impl Consensus {
             state: ConsensusState::InitialWait(now),
             proposals: Default::default(),
             batch_pool: VecDeque::new(),
+            negative_pool: Default::default(),
             validations: Validations::new(ValidationParams::default(), adaptor, clock),
             validation_cookie: rng.next_u64(),
             signature_service,
@@ -165,8 +170,48 @@ impl Consensus {
                     (preferred_id, preferred_seq)
                 );
 
+                //adjust batch pool
+                //put back batches from latest proposal if have started deliberation
+                match self.proposals.entry(self.latest_ledger.id) {
+                    Entry::Occupied(mut proposals) => {
+                        match proposals.get_mut().entry(self.node_id) {
+                            Entry::Occupied(proposal) => {
+                                let to_q = proposal.get().proposal.batches.clone();
+                                info!("adjust pool adding {:?} proposal batches", to_q.len());
+                                self.batch_pool.extend(to_q);
+                            }
+                            Entry::Vacant(_) => {}
+                        }
+                    }
+                    Entry::Vacant(_) => {}
+                };
+
+                //adjust pool by adding batches on the wrong branch and removing from right branch
+                //by current design (oct 31, 2023), the node can be off by one ledger, not more
+
+                //put back batches in the ledgers on the wrong branch
+                let to_q = self.latest_ledger.batch_set.clone();
+                info!("adjust pool adding {:?} ledger batches", to_q.len());
+                self.batch_pool.extend(to_q);
+
+                //latest's parent is the common ancestor of the branches
+                let common_ancestor = self.latest_ledger.ancestors[0].clone();
+                //find out batches in the ledgers on the right branch, and take them out
+                let mut l = self.validations.adaptor_mut().acquire(&preferred_id).await
+                    .expect("ValidationsAdaptor did not have a ledger in cache.");
+                while l.id != common_ancestor {
+                    l.batch_set.iter().for_each(|x| {self.negative_pool.insert(x.clone());});
+                    l = self.validations.adaptor_mut().acquire(&l.ancestors[0]).await
+                    .expect("ValidationsAdaptor did not have a ledger in cache.");
+                }
+                self.batch_pool = self.batch_pool.clone().into_iter().filter(|b| { !self.negative_pool.contains(b) }).collect();
+
+                //TODO filter new batches with negative_pool
+                //TODO clean the negative_pool
+
                 self.latest_ledger = self.validations.adaptor_mut().acquire(&preferred_id).await
                     .expect("ValidationsAdaptor did not have preferred ledger in cache.");
+                self.reset(&preferred_id, false);
             }
         }
 
@@ -182,7 +227,7 @@ impl Consensus {
             ConsensusState::InitialWait(wait_start) => {
                 info!("InitialWait. Checking if we should propose.");
 
-                if self.now().duration_since(wait_start).unwrap() > INITIAL_WAIT {
+                if self.now().duration_since(wait_start).unwrap() >= INITIAL_WAIT {
                     info!("We should propose so we are.");
                     // If we're in the InitialWait state and we've waited longer than the configured
                     // initial wait time, make a proposal.
@@ -404,7 +449,7 @@ impl Consensus {
         self.tx_primary.send(ConsensusPrimaryMessage::NewLedger(self.latest_ledger.clone())).await
             .expect("Failed to send new ledger to Primary.");
 
-        self.reset(&parent_id);
+        self.reset(&parent_id, true);
 
         info!("Did a new ledger {:?}. Num Batches {:?}", (self.latest_ledger.id, self.latest_ledger.seq()), self.latest_ledger.batch_set.len());
 
@@ -425,20 +470,21 @@ impl Consensus {
 
         // TODO: Do we need to store a Vec<Digest> in Ledger and sort batches here so that they
         //  yield the same ID on every validator?
-        let batches = our_proposal.proposal.batches.iter()
-            .map(|b| b.0)
-            .collect();
+        // let batches = our_proposal.proposal.batches.iter()
+        //     .map(|b| b.0)
+        //     .collect();
         Ledger::new(
             self.latest_ledger.seq() + 1,
             new_ancestors,
-            batches,
+            our_proposal.proposal.batches.clone(),
         )
     }
 
-    fn reset(&mut self, parent: &Digest) {
+    fn reset(&mut self, parent: &Digest, waiting: bool) {
         self.proposals.remove(parent);
         self.round.reset();
-        self.state = ConsensusState::InitialWait(self.now());
+        let t = if waiting { self.now() } else { self.now().sub(INITIAL_WAIT) };
+        self.state = ConsensusState::InitialWait(t);
     }
 
     async fn process_validation(&mut self, validation: SignedValidation) {
