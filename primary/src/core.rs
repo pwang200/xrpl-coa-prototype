@@ -36,6 +36,7 @@ pub struct Core {
     consensus_round: Arc<AtomicU64>, //TODO remove
 
     tx_primary_consensus: Sender<PrimaryConsensusMessage>,
+    tx_timeout: Sender<u32>,
     rx_consensus_primary: Receiver<ConsensusPrimaryMessage>,
     rx_stored_batches: Receiver<(Digest, WorkerId)>,
     rx_loopback_proposal: Receiver<SignedProposal>,
@@ -48,6 +49,7 @@ pub struct Core {
 
     /// TODO: We need some way to clean this Vec up.
     cancel_handlers: Vec<CancelHandler>,
+    timeout_count: u32,
 }
 
 impl Core {
@@ -58,6 +60,7 @@ impl Core {
         store: Store,
         consensus_round: Arc<AtomicU64>,
         tx_primary_consensus: Sender<PrimaryConsensusMessage>,
+        tx_timeout: Sender<u32>,
         rx_consensus_primary: Receiver<ConsensusPrimaryMessage>,
         rx_stored_batches: Receiver<(Digest, WorkerId)>,
         rx_loopback_proposal: Receiver<SignedProposal>,
@@ -72,6 +75,7 @@ impl Core {
                 store,
                 consensus_round,
                 tx_primary_consensus,
+                tx_timeout,
                 rx_consensus_primary,
                 rx_stored_batches,
                 rx_loopback_proposal,
@@ -80,6 +84,7 @@ impl Core {
                 tx_proposal_waiter,
                 network: ReliableSender::new(),
                 cancel_handlers: vec![],
+                timeout_count: 0,
             }
                 .run()
                 .await;
@@ -87,10 +92,11 @@ impl Core {
     }
 
     async fn process_timer_event(&mut self) {
-        self.tx_primary_consensus
-            .send(PrimaryConsensusMessage::Timeout)
+        self.tx_timeout
+            .send(self.timeout_count)
             .await //TODO need to wait?
             .expect("Failed to send timeout");
+        self.timeout_count += 1;
     }
 
     async fn process_stored_batch(&mut self, batch: Digest, worker_id: WorkerId) {

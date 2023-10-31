@@ -49,6 +49,7 @@ pub struct Consensus {
 
     rx_primary: Receiver<PrimaryConsensusMessage>,
     tx_primary: Sender<ConsensusPrimaryMessage>,
+    rx_timeout: Receiver<u32>,
 }
 
 impl Consensus {
@@ -60,6 +61,7 @@ impl Consensus {
         clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
         rx_primary: Receiver<PrimaryConsensusMessage>,
         tx_primary: Sender<ConsensusPrimaryMessage>,
+        rx_timeout: Receiver<u32>,
     ) {
         tokio::spawn(async move {
             let mut rng = OsRng {};
@@ -78,6 +80,7 @@ impl Consensus {
                 signature_service,
                 rx_primary,
                 tx_primary,
+                rx_timeout,
             }
                 .run()
                 .await;
@@ -92,6 +95,7 @@ impl Consensus {
         clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
         rx_primary: Receiver<PrimaryConsensusMessage>,
         tx_primary: Sender<ConsensusPrimaryMessage>,
+        rx_timeout: Receiver<u32>,
     ) -> Self {
         let mut rng = OsRng {};
         let now = clock.read().unwrap().now();
@@ -109,35 +113,41 @@ impl Consensus {
             signature_service,
             rx_primary,
             tx_primary,
+            rx_timeout,
         }
     }
 
     async fn run(&mut self) {
-        while let Some(message) = self.rx_primary.recv().await {
-            match message {
-                PrimaryConsensusMessage::Timeout => {
-                    info!("Received Timeout event.");
+        loop {
+            tokio::select! {
+                Some(message) = self.rx_timeout.recv() => {
+                    info!("Received Timeout event, count {}", message);
                     self.on_timeout().await;
-                }
-                PrimaryConsensusMessage::Batch(batch) => {
-                    // Store any batches that come from the primary in batch_pool to be included
-                    // in a future proposal.
-                    // info!("Received batch {:?}.", batch.0);
-                    if !self.batch_pool.contains(&batch) {
-                        self.batch_pool.push_front(batch);
+                },
+
+                Some(message) = self.rx_primary.recv() => {
+                    match message {
+                        PrimaryConsensusMessage::Batch(batch) => {
+                            // Store any batches that come from the primary in batch_pool to be included
+                            // in a future proposal.
+                            // info!("Received batch {:?}.", batch.0);
+                            if !self.batch_pool.contains(&batch) {
+                                self.batch_pool.push_front(batch);
+                            }
+                        },
+                        PrimaryConsensusMessage::Proposal(proposal) => {
+                            // info!("Received proposal: {:?}", proposal);
+                            self.on_proposal_received(proposal);
+                        },
+                        PrimaryConsensusMessage::SyncedLedger(synced_ledger) => {
+                            // info!("Received SyncedLedger.");
+                            self.validations.adaptor_mut().add_ledger(synced_ledger);
+                        },
+                        PrimaryConsensusMessage::Validation(validation) => {
+                            // info!("Consensus Received validation : {:?}.", validation);
+                            self.process_validation(validation).await;
+                        },
                     }
-                }
-                PrimaryConsensusMessage::Proposal(proposal) => {
-                    // info!("Received proposal: {:?}", proposal);
-                    self.on_proposal_received(proposal);
-                }
-                PrimaryConsensusMessage::SyncedLedger(synced_ledger) => {
-                    // info!("Received SyncedLedger.");
-                    self.validations.adaptor_mut().add_ledger(synced_ledger);
-                }
-                PrimaryConsensusMessage::Validation(validation) => {
-                    // info!("Consensus Received validation : {:?}.", validation);
-                    self.process_validation(validation).await;
                 }
             }
         }

@@ -110,6 +110,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
             // let (tx_feedback, rx_feedback) = channel(CHANNEL_CAPACITY);
             let (tx_primary_consensus, rx_primary_consensus) = channel(CHANNEL_CAPACITY);
             let (tx_consensus_primary, rx_consensus_primary) = channel(CHANNEL_CAPACITY);
+            let (tx_timeout, rx_timeout) = channel(100);
             let node_id = keypair.name.clone();
             let signature_service = SignatureService::new(keypair.secret);
             Primary::spawn(
@@ -119,7 +120,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 parameters.clone(),
                 store,
                 tx_primary_consensus,
-                rx_consensus_primary
+                rx_consensus_primary,
+                tx_timeout,
             );
             let clock = Arc::new(RwLock::new(WallNetClock));
             let adaptor = ValidationsAdaptor::new(clock.clone());
@@ -130,7 +132,8 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 adaptor,
                 clock,
                 rx_primary_consensus,
-                tx_consensus_primary
+                tx_consensus_primary,
+                rx_timeout,
             );
         }
 
