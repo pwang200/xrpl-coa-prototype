@@ -157,7 +157,8 @@ impl ProposalWaiter {
                 Some(message) = self.rx_from_core.recv() => {
                     match message {
                         CoreProposalWaiterMessage::NewLedger(ledger) => {
-                            for batch in ledger.batch_set{
+                            for (batch, _) in ledger.batch_set{
+                                //TODO same batch digest by different workers
                                 self.batch_cache.remove(&batch);
                             }
                         },
