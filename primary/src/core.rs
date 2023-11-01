@@ -115,7 +115,7 @@ impl Core {
 
     async fn process_proposal(&mut self, proposal: SignedProposal) {
         //-> DagResult<()> {
-        // debug!("Processing {:?}", proposal);
+        debug!("Sending proposal to consensus {:?}", proposal);
         self.tx_primary_consensus
             .send(PrimaryConsensusMessage::Proposal(proposal))
             .await //TODO need to wait?
