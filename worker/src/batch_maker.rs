@@ -15,6 +15,7 @@ use std::convert::TryInto as _;
 use std::net::SocketAddr;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
+use config::WorkerId;
 
 #[cfg(test)]
 #[path = "tests/batch_maker_tests.rs"]
@@ -25,6 +26,7 @@ pub type Batch = Vec<Transaction>;
 
 /// Assemble clients transactions into batches.
 pub struct BatchMaker {
+    worker_id: WorkerId,
     /// The preferred batch size (in bytes).
     batch_size: usize,
     /// The maximum delay after which to seal the batch (in ms).
@@ -45,6 +47,7 @@ pub struct BatchMaker {
 
 impl BatchMaker {
     pub fn spawn(
+        worker_id: WorkerId,
         batch_size: usize,
         max_batch_delay: u64,
         rx_transaction: Receiver<Transaction>,
@@ -53,6 +56,7 @@ impl BatchMaker {
     ) {
         tokio::spawn(async move {
             Self {
+                worker_id,
                 batch_size,
                 max_batch_delay,
                 rx_transaction,
@@ -121,8 +125,11 @@ impl BatchMaker {
         #[cfg(feature = "benchmark")]
         {
             // NOTE: This is one extra hash that is only needed to print the following log entries.
+            let mut id_data = self.worker_id.to_be_bytes().as_slice().to_vec();
+            let mut tx_data = serialized.to_vec();
+            tx_data.append(&mut id_data);
             let digest = Digest(
-                Sha512::digest(&serialized).as_slice()[..32]
+                Sha512::digest(&tx_data).as_slice()[..32]
                     .try_into()
                     .unwrap(),
             );

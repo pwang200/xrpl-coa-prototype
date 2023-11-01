@@ -395,7 +395,14 @@ impl Consensus {
 
                 // If 80% or more of UNL nodes proposed the same batch set, we have reached consensus,
                 // otherwise we need another round.
-                num_matching_sets >= num_nodes_for_threshold
+                info!("check_consensus, same as ours {}, quorum {}", num_matching_sets, num_nodes_for_threshold);
+                let great = num_matching_sets >= num_nodes_for_threshold;
+                if !great{
+                    for (_, p) in proposals {
+                        info!("{:?}", p);
+                    }
+                }
+                great
             } ,
             None => false,
         }

@@ -33,9 +33,12 @@ impl Processor {
         own_digest: bool,
     ) {
         tokio::spawn(async move {
-            while let Some(batch) = rx_batch.recv().await {
+            while let Some(mut batch) = rx_batch.recv().await {
+                let mut id_data = id.to_be_bytes().as_slice().to_vec();
+                let mut tx_data = batch.clone();
+                tx_data.append(&mut id_data);
                 // Hash the batch.
-                let digest = Digest(Sha512::digest(&batch).as_slice()[..32].try_into().unwrap());
+                let digest = Digest(Sha512::digest(&tx_data).as_slice()[..32].try_into().unwrap());
 
                 // Store the batch.
                 store.write(digest.to_vec(), batch).await;
