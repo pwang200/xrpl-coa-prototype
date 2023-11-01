@@ -1,7 +1,7 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 //use crate::error::{DagError, DagResult};
 
-use crate::primary::{LedgerOrValidation, PrimaryPrimaryMessage};
+use crate::primary::{LedgerOrValidation, PrimaryConsensusMessageData, PrimaryPrimaryMessage};
 use bytes::Bytes;
 use config::Committee;
 //use crypto::Hash as _;
@@ -36,7 +36,7 @@ pub struct Core {
     consensus_round: Arc<AtomicU64>, //TODO remove
 
     tx_primary_consensus: Sender<PrimaryConsensusMessage>,
-    tx_timeout: Sender<u32>,
+    tx_primary_consensus_data: Sender<PrimaryConsensusMessageData>,
     rx_consensus_primary: Receiver<ConsensusPrimaryMessage>,
     rx_stored_batches: Receiver<(Digest, WorkerId)>,
     rx_loopback_proposal: Receiver<SignedProposal>,
@@ -60,7 +60,7 @@ impl Core {
         store: Store,
         consensus_round: Arc<AtomicU64>,
         tx_primary_consensus: Sender<PrimaryConsensusMessage>,
-        tx_timeout: Sender<u32>,
+        tx_primary_consensus_data: Sender<PrimaryConsensusMessageData>,
         rx_consensus_primary: Receiver<ConsensusPrimaryMessage>,
         rx_stored_batches: Receiver<(Digest, WorkerId)>,
         rx_loopback_proposal: Receiver<SignedProposal>,
@@ -75,7 +75,7 @@ impl Core {
                 store,
                 consensus_round,
                 tx_primary_consensus,
-                tx_timeout,
+                tx_primary_consensus_data,
                 rx_consensus_primary,
                 rx_stored_batches,
                 rx_loopback_proposal,
@@ -92,8 +92,8 @@ impl Core {
     }
 
     async fn process_timer_event(&mut self) {
-        self.tx_timeout
-            .send(self.timeout_count)
+        self.tx_primary_consensus
+            .send(PrimaryConsensusMessage::Timeout(self.timeout_count))
             .await //TODO need to wait?
             .expect("Failed to send timeout");
         self.timeout_count += 1;
@@ -103,8 +103,8 @@ impl Core {
         #[cfg(feature = "benchmark")]
         info!("Created {:?}", batch);
 
-        self.tx_primary_consensus
-            .send(PrimaryConsensusMessage::Batch((batch, worker_id)))
+        self.tx_primary_consensus_data
+            .send(PrimaryConsensusMessageData::Batch((batch, worker_id)))
             .await //TODO need to wait?
             .expect("Failed to send workers' digests");
         self.tx_proposal_waiter

@@ -55,10 +55,15 @@ pub enum WorkerPrimaryMessage {
 
 #[derive(Debug)]
 pub enum PrimaryConsensusMessage {
-    Batch((Digest, WorkerId)),
+    Timeout(u32),
     Proposal(SignedProposal),
     SyncedLedger(Ledger),
     Validation(SignedValidation),
+}
+
+#[derive(Debug)]
+pub enum PrimaryConsensusMessageData {
+    Batch((Digest, WorkerId))
 }
 
 #[derive(Debug)]
@@ -83,8 +88,8 @@ impl Primary {
         parameters: Parameters,
         store: Store,
         tx_primary_consensus: Sender<PrimaryConsensusMessage>,
+        tx_primary_consensus_data: Sender<PrimaryConsensusMessageData>,
         rx_consensus_primary: Receiver<ConsensusPrimaryMessage>,
-        tx_timeout: Sender<u32>,
     ) {
         let (tx_worker_batches, rx_worker_batches) = channel::<(Digest, WorkerId)>(CHANNEL_CAPACITY);
         let (tx_store_batches, rx_stored_batches) = channel(CHANNEL_CAPACITY);
@@ -179,7 +184,7 @@ impl Primary {
             store.clone(),
             consensus_round.clone(),
             tx_primary_consensus,
-            tx_timeout,
+            tx_primary_consensus_data,
             rx_consensus_primary,
             rx_stored_batches,
             rx_loopback_proposals,
