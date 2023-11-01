@@ -206,7 +206,10 @@ impl Consensus {
                     l = self.validations.adaptor_mut().acquire(&l.ancestors[0]).await
                     .expect("ValidationsAdaptor did not have a ledger in cache.");
                 }
-                self.batch_pool = self.batch_pool.clone().into_iter().filter(|b| { !self.negative_pool.contains(b) }).collect();
+                self.batch_pool = self.batch_pool.iter()
+                    .filter(|b| { !self.negative_pool.contains(b) })
+                    .map(|b| *b)
+                    .collect();
 
                 //TODO filter new batches with negative_pool
                 //TODO clean the negative_pool
