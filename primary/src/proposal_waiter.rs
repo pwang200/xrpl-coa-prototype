@@ -119,29 +119,27 @@ impl ProposalWaiter {
                 Some(signed_proposal) = self.rx_network_proposal.recv() => {
                     //TODO verify sig
 
-                    debug!("Synching proposal {:?}", signed_proposal);
                     let batches = &signed_proposal.proposal.batches;
 
-                    let mut missing = false;
+                    let mut missing = HashMap::new();
                     for (digest, worker_id) in batches.iter() {
                         if ! self.batch_cache.contains(digest) {
                             let key = [digest.as_ref(), &worker_id.to_le_bytes()].concat();
                             match self.store.read(key).await {
                                 Ok(Some(_)) => {},
                                 Ok(None) => {
-                                    missing = true;
-                                    break;
+                                    missing.insert(*digest, *worker_id);
                                 },
                                 Err(e) => {
                                     error!("{}", e);
-                                }
+                                },
                             }
                         }
                     }
 
-                    // info!("Time to read batches: {:?}", Instant::now().duration_since(now));
-
-                    if !missing {
+                    // info!("Proposal {:?} missing {:?}", signed_proposal, missing.keys().collect::<Vec<&Digest>>());
+                    if missing.is_empty() {
+                        debug!("(1) Send proposal {:?}", signed_proposal);
                         self.tx_loopback_proposal
                         .send(signed_proposal)
                         .await //TODO need to wait?
@@ -149,7 +147,7 @@ impl ProposalWaiter {
                         continue;
                     }
 
-                    // info!("Missing some batches for proposal {:?}.", (signed_proposal.proposal.round, signed_proposal.proposal.node_id));
+                    debug!("Synching proposal {:?}, missing {}", signed_proposal, missing.len());
                     let now = clock();
                     self.to_acquire.push_back((signed_proposal, now));
                 },
@@ -177,6 +175,7 @@ impl ProposalWaiter {
                         for (x, _) in & signed_proposal.proposal.batches {
                             let _ = self.batch_requests.remove(x);
                         }
+                        debug!("(3) Send proposal {:?}", signed_proposal);
                         self.tx_loopback_proposal.send(signed_proposal).await.expect("Failed to send proposal");
                     },
                     Ok(None) => {
@@ -235,6 +234,7 @@ impl ProposalWaiter {
                             missing.keys().collect::<Vec<&Digest>>()
                         );*/
                         if missing.is_empty() {
+                            debug!("(2) Send proposal {:?}", signed_proposal);
                             self.tx_loopback_proposal
                             .send(signed_proposal)
                             .await //TODO need to wait?
