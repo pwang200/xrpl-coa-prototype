@@ -193,9 +193,8 @@ impl Consensus {
                 //by current design (oct 31, 2023), the node can be off by one ledger, not more
 
                 //put back batches in the ledgers on the wrong branch
-                let to_q = self.latest_ledger.batch_set.clone();
-                info!("adjust pool adding {:?} ledger batches", to_q.len());
-                self.batch_pool.extend(to_q);
+                info!("adjust pool adding {:?} ledger batches", self.latest_ledger.batch_set.len());
+                self.batch_pool.extend(self.latest_ledger.batch_set.iter());
 
                 //latest's parent is the common ancestor of the branches
                 let common_ancestor = self.latest_ledger.ancestors[0].clone();
