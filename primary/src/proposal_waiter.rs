@@ -10,7 +10,6 @@ use futures::stream::StreamExt as _;
 use log::{debug, error, info};
 use network::SimpleSender;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::os::unix::raw::ino_t;
 use std::time::{SystemTime, UNIX_EPOCH};
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -210,7 +209,7 @@ impl ProposalWaiter {
                             continue;
                         }
 
-                        let now = Instant::now();
+                        //let now = Instant::now();
 
                         let mut missing = HashMap::new();
                         for (digest, worker_id) in batches.iter() {

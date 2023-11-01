@@ -14,7 +14,7 @@ use xrpl_consensus_validations::arena_ledger_trie::ArenaLedgerTrie;
 
 use config::{Committee, WorkerId};
 use crypto::{Digest, PublicKey, SignatureService};
-use primary::{ConsensusPrimaryMessage, PrimaryConsensusMessage, proposal, SignedValidation, Validation};
+use primary::{ConsensusPrimaryMessage, PrimaryConsensusMessage, PrimaryConsensusMessageData, SignedValidation, Validation};
 use primary::Ledger;
 use primary::proposal::{ConsensusRound, Proposal, SignedProposal};
 
@@ -51,8 +51,8 @@ pub struct Consensus {
     signature_service: SignatureService,
 
     rx_primary: Receiver<PrimaryConsensusMessage>,
+    rx_primary_data: Receiver<PrimaryConsensusMessageData>,
     tx_primary: Sender<ConsensusPrimaryMessage>,
-    rx_timeout: Receiver<u32>,
 }
 
 impl Consensus {
@@ -63,8 +63,8 @@ impl Consensus {
         adaptor: ValidationsAdaptor,
         clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
         rx_primary: Receiver<PrimaryConsensusMessage>,
+        rx_primary_data: Receiver<PrimaryConsensusMessageData>,
         tx_primary: Sender<ConsensusPrimaryMessage>,
-        rx_timeout: Receiver<u32>,
     ) {
         tokio::spawn(async move {
             let mut rng = OsRng {};
@@ -83,8 +83,8 @@ impl Consensus {
                 validation_cookie: rng.next_u64(),
                 signature_service,
                 rx_primary,
+                rx_primary_data,
                 tx_primary,
-                rx_timeout,
             }
                 .run()
                 .await;
@@ -98,8 +98,8 @@ impl Consensus {
         adaptor: ValidationsAdaptor,
         clock: Arc<RwLock<<ValidationsAdaptor as Adaptor>::ClockType>>,
         rx_primary: Receiver<PrimaryConsensusMessage>,
+        rx_primary_data: Receiver<PrimaryConsensusMessageData>,
         tx_primary: Sender<ConsensusPrimaryMessage>,
-        rx_timeout: Receiver<u32>,
     ) -> Self {
         let mut rng = OsRng {};
         let now = clock.read().unwrap().now();
@@ -117,28 +117,32 @@ impl Consensus {
             validation_cookie: rng.next_u64(),
             signature_service,
             rx_primary,
+            rx_primary_data,
             tx_primary,
-            rx_timeout,
         }
     }
 
     async fn run(&mut self) {
         loop {
             tokio::select! {
-                Some(message) = self.rx_timeout.recv() => {
-                    info!("Received Timeout event, count {}", message);
-                    self.on_timeout().await;
-                },
-
-                Some(message) = self.rx_primary.recv() => {
+                Some(message) = self.rx_primary_data.recv() => {
                     match message {
-                        PrimaryConsensusMessage::Batch(batch) => {
+                        PrimaryConsensusMessageData::Batch(batch) => {
                             // Store any batches that come from the primary in batch_pool to be included
                             // in a future proposal.
                             // info!("Received batch {:?}.", batch.0);
                             if !self.batch_pool.contains(&batch) {
                                 self.batch_pool.push_front(batch);
                             }
+                        },
+                    }
+                },
+
+                Some(message) = self.rx_primary.recv() => {
+                    match message {
+                        PrimaryConsensusMessage::Timeout(c) => {
+                            info!("Received Timeout event, count {}", c);
+                            self.on_timeout().await;
                         },
                         PrimaryConsensusMessage::Proposal(proposal) => {
                             // info!("Received proposal: {:?}", proposal);
