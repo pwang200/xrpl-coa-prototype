@@ -180,9 +180,8 @@ impl Consensus {
                     Entry::Occupied(mut proposals) => {
                         match proposals.get_mut().entry(self.node_id) {
                             Entry::Occupied(proposal) => {
-                                let to_q = proposal.get().proposal.batches.clone();
-                                info!("adjust pool adding {:?} proposal batches", to_q.len());
-                                self.batch_pool.extend(to_q);
+                                info!("adjust pool adding {:?} proposal batches", proposal.get().proposal.batches.len());
+                                self.batch_pool.extend(proposal.get().proposal.batches.iter());
                             }
                             Entry::Vacant(_) => {}
                         }
