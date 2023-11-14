@@ -222,7 +222,7 @@ impl Consensus {
                 //find out batches in the ledgers on the right branch, and take them out
                 let mut l = self.validations.adaptor_mut().acquire(&preferred_id).await
                     .expect("ValidationsAdaptor did not have a ledger in cache.");
-                while l.id != common_ancestor {
+                while l.id != common_ancestor && l.id != Ledger::make_genesis().id {
                     info!("adjust pool, ledger on preferred branch {:?} ", l.id);
                     l.batch_set.iter().for_each(|x| {self.negative_pool.insert(x.clone());});
                     l = self.validations.adaptor_mut().acquire(&l.ancestors.last().unwrap()).await
@@ -409,7 +409,7 @@ impl Consensus {
         }
     }
 
-    fn get_normal_validators<'a>(&'a self) -> HashSet<&'a PublicKey> {
+    fn get_normal_validators(&self) -> HashSet<&PublicKey> {
         let mut too_fast: HashSet<&PublicKey> = HashSet::new();
         self.progress.iter()
             .filter(|(r, _)| **r > self.latest_ledger.seq)
@@ -512,7 +512,7 @@ impl Consensus {
 
         self.reset(&parent_id, true);
 
-        info!("Did a new ledger {:?}. Num Batches {:?}", (self.latest_ledger.id, self.latest_ledger.seq()), self.latest_ledger.batch_set.len());
+        info!("Potential consensus on new ledger {:?}. Num Batches {:?}", (self.latest_ledger.id, self.latest_ledger.seq()), self.latest_ledger.batch_set.len());
 
         // #[cfg(feature = "benchmark")]
         // for (batch, _) in &self.latest_ledger.batch_set {
