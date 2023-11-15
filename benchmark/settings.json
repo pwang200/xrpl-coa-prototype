@@ -7,7 +7,7 @@
     "repo": {
         "name": "xrpl-coa-prototype",
         "url": "https://github.com/nkramer44/xrpl-coa-prototype",
-        "branch": "nk/aws-scripts"
+        "branch": "xrpl-consensus"
     },
     "consensus-repo": {
         "name": "xrpl-consensus-rs",

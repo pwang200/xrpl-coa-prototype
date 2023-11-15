@@ -100,7 +100,7 @@ def remote(ctx, debug=False):
         'collocate': True,
         'rate': [30_000],
         'tx_size': 177,
-        'duration': 20,
+        'duration': 60,
         'batch_size': [1, 500_000],  # bytes
         'runs': 1,
     }
