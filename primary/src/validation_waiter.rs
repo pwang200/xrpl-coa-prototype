@@ -84,13 +84,13 @@ impl LedgerMaster {
                 }
 
                 for l in &ledgers {
-                    info!("Fully validated ledger {:?}", l.id);
+                    info!("Fully validated ledger {:?} len {:?}", l.id, l.batch_set.len());
                     #[cfg(feature = "benchmark")]
                     for (batch, _) in &l.batch_set {
                         info!("Committed {:?} ", batch);
                     }
                 }
-                self.tx_full_validated_ledgers.send(ledgers).await;
+                self.tx_full_validated_ledgers.send(ledgers).await.expect("Failed to send.");
             }
         }
     }

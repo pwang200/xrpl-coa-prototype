@@ -59,6 +59,7 @@ class LogParser:
             k: v for x in sizes for k, v in x.items() if k in self.commits
         }
 
+        Print.info(f'self.sizes: {self.sizes}')
         # Determine whether the primary and the workers are collocated.
         self.collocate = set(primary_ips) == set(workers_ips)
 
