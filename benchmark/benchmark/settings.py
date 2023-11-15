@@ -8,9 +8,9 @@ class SettingsError(Exception):
 
 class Settings:
     def __init__(self, key_name, key_path, base_port, repo_name, repo_url,
-                 branch, instance_type, aws_regions):
+                 branch, consensus_repo_name, consensus_repo_url, consensus_branch, instance_type, aws_regions):
         inputs_str = [
-            key_name, key_path, repo_name, repo_url, branch, instance_type
+            key_name, key_path, repo_name, repo_url, branch, consensus_repo_name, consensus_repo_url, consensus_branch, instance_type
         ]
         if isinstance(aws_regions, list):
             regions = aws_regions
@@ -32,6 +32,10 @@ class Settings:
         self.repo_url = repo_url
         self.branch = branch
 
+        self.consensus_repo_name = consensus_repo_name
+        self.consensus_repo_url = consensus_repo_url
+        self.consensus_branch = consensus_branch
+
         self.instance_type = instance_type
         self.aws_regions = regions
 
@@ -48,6 +52,9 @@ class Settings:
                 data['repo']['name'],
                 data['repo']['url'],
                 data['repo']['branch'],
+                data['consensus-repo']['name'],
+                data['consensus-repo']['url'],
+                data['consensus-repo']['branch'],
                 data['instances']['type'],
                 data['instances']['regions'],
             )

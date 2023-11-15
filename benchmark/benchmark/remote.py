@@ -71,6 +71,7 @@ class Bench:
             'sudo apt-get install -y clang',
 
             # Clone the repo.
+            f'(git clone {self.settings.consensus_repo_url} || (cd {self.settings.consensus_repo_name} ; git pull))',
             f'(git clone {self.settings.repo_url} || (cd {self.settings.repo_name} ; git pull))'
         ]
         hosts = self.manager.hosts(flat=True)
@@ -146,6 +147,9 @@ class Bench:
             f'Updating {len(ips)} machines (branch "{self.settings.branch}")...'
         )
         cmd = [
+            f'(cd {self.settings.consensus_repo_name} && git fetch -f)',
+            f'(cd {self.settings.consensus_repo_name} && git checkout -f {self.settings.branch})',
+            f'(cd {self.settings.consensus_repo_name} && git pull -f)',
             f'(cd {self.settings.repo_name} && git fetch -f)',
             f'(cd {self.settings.repo_name} && git checkout -f {self.settings.branch})',
             f'(cd {self.settings.repo_name} && git pull -f)',
