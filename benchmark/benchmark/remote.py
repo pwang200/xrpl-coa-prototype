@@ -83,12 +83,14 @@ class Bench:
             e = FabricError(e) if isinstance(e, GroupException) else e
             raise BenchError('Failed to install repo on testbed', e)
 
-    def kill(self, hosts=[], delete_logs=False):
+    def kill(self, hosts=[], delete_logs=False, delete_db=False):
         assert isinstance(hosts, list)
         assert isinstance(delete_logs, bool)
+        assert isinstance(delete_db, bool)
         hosts = hosts if hosts else self.manager.hosts(flat=True)
         delete_logs = CommandMaker.clean_logs() if delete_logs else 'true'
-        cmd = [delete_logs, f'({CommandMaker.kill()} || true)']
+        delete_db = CommandMaker.cleanup_db() if delete_db else 'true'
+        cmd = [delete_logs, delete_db, f'({CommandMaker.kill()} || true)']
         try:
             g = Group(*hosts, user='ubuntu', connect_kwargs=self.connect)
             g.run(' && '.join(cmd), hide=True)
@@ -98,7 +100,7 @@ class Bench:
     def _select_hosts(self, bench_parameters):
         # Collocate the primary and its workers on the same machine.
         if bench_parameters.collocate:
-            nodes = max(bench_parameters.nodes)
+            nodes = bench_parameters.nodes
 
             # Ensure there are enough hosts.
             hosts = self.manager.hosts()
@@ -148,7 +150,7 @@ class Bench:
         )
         cmd = [
             f'(cd {self.settings.consensus_repo_name} && git fetch -f)',
-            f'(cd {self.settings.consensus_repo_name} && git checkout -f {self.settings.branch})',
+            f'(cd {self.settings.consensus_repo_name} && git checkout -f {self.settings.consensus_branch})',
             f'(cd {self.settings.consensus_repo_name} && git pull -f)',
             f'(cd {self.settings.repo_name} && git fetch -f)',
             f'(cd {self.settings.repo_name} && git checkout -f {self.settings.branch})',
@@ -219,7 +221,7 @@ class Bench:
 
         # Kill any potentially unfinished run and delete logs.
         hosts = committee.ips()
-        self.kill(hosts=hosts, delete_logs=True)
+        self.kill(hosts=hosts, delete_logs=True, delete_db=True)
 
         # Run the clients (they will wait for the nodes to be ready).
         # Filter all faulty nodes from the client addresses (or they will wait
@@ -277,7 +279,7 @@ class Bench:
             sleep(ceil(duration / 20))
         self.kill(hosts=hosts, delete_logs=False)
 
-    def _logs(self, committee, faults):
+    def _logs(self, committee, faults, run_count):
         # Delete local logs (if any).
         cmd = CommandMaker.clean_logs()
         subprocess.run([cmd], shell=True, stderr=subprocess.DEVNULL)
@@ -305,7 +307,7 @@ class Bench:
             c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
             c.get(
                 PathMaker.primary_log_file(i), 
-                local=PathMaker.primary_log_file(i)
+                local=PathMaker.primary_log_file(i + run_count)
             )
 
         # Parse logs and return the parser.
@@ -348,6 +350,7 @@ class Bench:
         committee_copy = deepcopy(committee)
         committee_copy.remove_nodes(committee.size() - bench_parameters.nodes)
 
+        run_count = 0
         for r in bench_parameters.rate:
             for b in bench_parameters.batch_size:
                 Print.heading(f'\nRunning {bench_parameters.nodes} nodes (input rate: {r:,} tx/s, batch size: {b} bytes)')
@@ -360,7 +363,7 @@ class Bench:
                         )
 
                         faults = bench_parameters.faults
-                        logger = self._logs(committee_copy, faults)
+                        logger = self._logs(committee_copy, faults, run_count)
                         logger.print(PathMaker.result_file(
                             faults,
                             bench_parameters.nodes,
@@ -368,7 +371,13 @@ class Bench:
                             bench_parameters.collocate,
                             r,
                             bench_parameters.tx_size,
+                            b
                         ))
+                        run_count += 20
+                        # Print.info("Waiting 10 seconds.")
+                        # sleep(10)
+                        # Print.info("Done Waiting 10 seconds.")
+
                     except (subprocess.SubprocessError, GroupException, ParseError) as e:
                         self.kill(hosts=selected_hosts)
                         if isinstance(e, GroupException):

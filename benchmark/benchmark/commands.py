@@ -13,6 +13,10 @@ class CommandMaker:
         )
 
     @staticmethod
+    def cleanup_db():
+        return f'rm -r -f .db-*'
+
+    @staticmethod
     def clean_logs():
         return f'rm -r {PathMaker.logs_path()} ; mkdir -p {PathMaker.logs_path()}'
 

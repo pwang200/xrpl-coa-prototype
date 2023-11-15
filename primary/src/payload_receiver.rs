@@ -25,24 +25,28 @@ impl PayloadReceiver {
                  tx_proposal_waiter: Sender<Batches>,
                  tx_consensus: Sender<Batches>) {
         tokio::spawn(async move {
-            Self { store, rx_store, tx_proposal_waiter, tx_consensus,
-                batch_buf: Vec::with_capacity(100) }.run().await;
+            Self {
+                store,
+                rx_store,
+                tx_proposal_waiter,
+                tx_consensus,
+                batch_buf: Vec::with_capacity(100),
+            }.run().await;
         });
     }
 
     async fn run(&mut self) {
         while let Some((batch, worker_id)) = self.rx_store.recv().await {
-            if *batch.0.get(0).unwrap() == 0 as u8 {
-                #[cfg(feature = "benchmark")]
-                info!("Created {:?}", batch);
-            }
+            #[cfg(feature = "benchmark")]
+            info!("Created {:?}", batch);
+
             self.batch_buf.push((batch, worker_id));
             if self.batch_buf.len() >= 100 {
                 //debug!("sending batches");
                 let batches = Batches::Batches(self.batch_buf.clone().drain(..).collect());
-                self.tx_consensus.send(batches).await;
+                self.tx_consensus.send(batches).await.unwrap();
                 let batches = Batches::Batches(self.batch_buf.drain(..).collect());
-                self.tx_proposal_waiter.send(batches).await;
+                self.tx_proposal_waiter.send(batches).await.unwrap();
             }
         }
     }

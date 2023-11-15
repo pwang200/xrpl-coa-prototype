@@ -18,8 +18,8 @@ def local(ctx, debug=True):
         'workers': 1,
         'rate': 20_000,
         'tx_size': 512,
-        'batch_size': 50_000,  # bytes
-        'duration': 20,
+        'batch_size': 500_000,  # bytes
+        'duration': 60,
     }
     node_params = {
         'header_size': 1_000,  # bytes
@@ -100,8 +100,8 @@ def remote(ctx, debug=False):
         'collocate': True,
         'rate': [30_000],
         'tx_size': 177,
-        'duration': 120,
-        'batch_size': [1],  # bytes
+        'duration': 20,
+        'batch_size': [500_000],  # bytes
         'runs': 1,
     }
     node_params = {

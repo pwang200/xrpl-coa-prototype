@@ -49,7 +49,7 @@ impl LedgerMaster {
 
     async fn check_fully_validated(&mut self, lsqn: LedgerIndex, lid: Digest) {
         let full = match self.hash_to_validators.get(&lid) {
-            Some(validators) => { validators.len() >= self.quorum },
+            Some(validators) => { validators.len() >= self.quorum }
             None => false,
         };
 
@@ -87,12 +87,10 @@ impl LedgerMaster {
                     info!("Fully validated ledger {:?}", l.id);
                     #[cfg(feature = "benchmark")]
                     for (batch, _) in &l.batch_set {
-                        if *batch.0.get(0).unwrap() == 0 as u8 {
-                            info!("Committed {:?} ", batch);
-                        }
+                        info!("Committed {:?} ", batch);
                     }
                 }
-                self.tx_full_validated_ledgers.send(ledgers).await;
+                self.tx_full_validated_ledgers.send(ledgers).await.unwrap();
             }
         }
     }
@@ -151,7 +149,6 @@ impl ValidationWaiter {
         rx_network_ledgers: Receiver<Ledger>,
         tx_loopback_validations_ledgers: Sender<LedgerOrValidation>,
         rx_own_ledgers: Receiver<LedgerOrValidation>,
-
         tx_full_validated_ledgers: Sender<Vec<Ledger>>,
     ) {
         tokio::spawn(async move {
@@ -184,17 +181,17 @@ impl ValidationWaiter {
                         .await
                         .expect("TODO: panic message");
                 }
-            },
+            }
             None => {}
         }
 
         let mut to_deliver = VecDeque::new();
-        self.to_acquire.retain(| (v, _) | return if v.ledger_id() == *ledger_id {
+        self.to_acquire.retain(|(v, _)| return if v.ledger_id() == *ledger_id {
             to_deliver.push_back(v.clone());
             false
         } else {
             true
-        });
+        };);
         for v in to_deliver {
             self.tx_loopback_validations_ledgers.send(LedgerOrValidation::Validation(v))
                 .await
@@ -214,7 +211,7 @@ impl ValidationWaiter {
         }
     }
 
-    async fn store_ledger(&mut self, ledger: Ledger, own: bool){
+    async fn store_ledger(&mut self, ledger: Ledger, own: bool) {
         self.store.write(ledger.id.to_vec(), bincode::serialize(&ledger).unwrap()).await;
         let lid = ledger.id.clone();
         if !own {
@@ -245,7 +242,7 @@ impl ValidationWaiter {
                 if let Some((ledgers, _)) = self.ledger_dependencies.get_mut(&parent)
                 {
                     ledgers.push(ledger);
-                }else{
+                } else {
                     let mut ledgers = Vec::new();
                     ledgers.push(ledger);
                     self.ledger_dependencies.insert(parent.clone(), (ledgers, pk.clone()));
