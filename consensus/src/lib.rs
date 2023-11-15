@@ -383,7 +383,7 @@ impl Consensus {
     }
 
     fn on_proposal_received(&mut self, proposal: SignedProposal) {
-        info!("Received new proposal: {:?}", proposal);
+        info!("Received new proposal: {:?}: {:?}", proposal, proposal.proposal.batches);
         *self.freshness.get_mut(&proposal.proposal.node_id).unwrap() = self.timer_count;
         // The Primary will check the signature and make sure the proposal comes from
         // someone in our UNL before sending it to Consensus, therefore we do not need to
