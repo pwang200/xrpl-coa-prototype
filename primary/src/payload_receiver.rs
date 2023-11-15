@@ -40,14 +40,17 @@ impl PayloadReceiver {
             #[cfg(feature = "benchmark")]
             info!("Created {:?}", batch);
 
-            self.batch_buf.push((batch, worker_id));
-            if self.batch_buf.len() >= 100 {
+            // self.batch_buf.push((batch, worker_id));
+            // if self.batch_buf.len() >= 100 {
                 //debug!("sending batches");
-                let batches = Batches::Batches(self.batch_buf.clone().drain(..).collect());
-                self.tx_consensus.send(batches).await.unwrap();
-                let batches = Batches::Batches(self.batch_buf.drain(..).collect());
-                self.tx_proposal_waiter.send(batches).await.unwrap();
-            }
+                // let batches = Batches::Batches(self.batch_buf.clone().drain(..).collect());
+                // self.tx_consensus.send(batches).await.unwrap();
+                // let batches = Batches::Batches(self.batch_buf.drain(..).collect());
+                // self.tx_proposal_waiter.send(batches).await.unwrap();
+            // }
+            let batches = Batches::Batches(vec![(batch, worker_id)]);
+            self.tx_consensus.send(batches.clone()).await.unwrap();
+            self.tx_proposal_waiter.send(batches).await.unwrap();
         }
     }
 }
