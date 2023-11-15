@@ -93,6 +93,7 @@ class LocalBench:
                     PathMaker.key_file(i),
                     PathMaker.committee_file(),
                     PathMaker.db_path(i),
+                    self.bench_parameters.batch_size,
                     PathMaker.parameters_file(),
                     debug=debug
                 )
@@ -106,6 +107,7 @@ class LocalBench:
                         PathMaker.key_file(i),
                         PathMaker.committee_file(),
                         PathMaker.db_path(i, id),
+                        self.bench_parameters.batch_size,
                         PathMaker.parameters_file(),
                         id,  # The worker's id.
                         debug=debug

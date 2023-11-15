@@ -8,6 +8,7 @@ use std::fs::{self, OpenOptions};
 use std::io::BufWriter;
 use std::io::Write as _;
 use std::net::SocketAddr;
+use serde_json::{json, Value};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -95,7 +96,7 @@ impl Default for Parameters {
     }
 }
 
-impl Import for Parameters {}
+// impl Import for Parameters {}
 
 impl Parameters {
     pub fn log(&self) {
@@ -106,6 +107,20 @@ impl Parameters {
         info!("Sync retry nodes set to {} nodes", self.sync_retry_nodes);
         info!("Batch size set to {} B", self.batch_size);
         info!("Max batch delay set to {} ms", self.max_batch_delay);
+    }
+
+    pub fn import(path: &str, batch_size: usize) -> Result<Self, ConfigError> {
+        let reader = || -> Result<Self, std::io::Error> {
+            let data = fs::read(path)?;
+            let mut value: Value = serde_json::from_slice(data.as_slice())?;
+            value.as_object_mut().unwrap().insert("batch_size".to_string(), json!(batch_size));
+            Ok(serde_json::from_value(value)?)
+            // Ok(serde_json::from_slice(data.as_slice())?)
+        };
+        reader().map_err(|e| ConfigError::ImportError {
+            file: path.to_string(),
+            message: e.to_string(),
+        })
     }
 }
 

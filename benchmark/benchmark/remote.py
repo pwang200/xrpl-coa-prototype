@@ -214,7 +214,7 @@ class Bench:
 
         return committee
 
-    def _run_single(self, rate, committee, bench_parameters, debug=False):
+    def _run_single(self, rate, committee, bench_parameters, batch_size, debug=False):
         faults = bench_parameters.faults
 
         # Kill any potentially unfinished run and delete logs.
@@ -247,6 +247,7 @@ class Bench:
                 PathMaker.key_file(i),
                 PathMaker.committee_file(),
                 PathMaker.db_path(i),
+                batch_size,
                 PathMaker.parameters_file(),
                 debug=debug
             )
@@ -262,6 +263,7 @@ class Bench:
                     PathMaker.key_file(i),
                     PathMaker.committee_file(),
                     PathMaker.db_path(i, id),
+                    batch_size,
                     PathMaker.parameters_file(),
                     id,  # The worker's id.
                     debug=debug
@@ -342,30 +344,30 @@ class Bench:
             raise BenchError('Failed to configure nodes', e)
 
         # Run benchmarks.
-        for n in bench_parameters.nodes:
-            committee_copy = deepcopy(committee)
-            committee_copy.remove_nodes(committee.size() - n)
 
-            for r in bench_parameters.rate:
-                Print.heading(f'\nRunning {n} nodes (input rate: {r:,} tx/s)')
+        committee_copy = deepcopy(committee)
+        committee_copy.remove_nodes(committee.size() - bench_parameters.nodes)
 
+        for r in bench_parameters.rate:
+            for b in bench_parameters.batch_size:
+                Print.heading(f'\nRunning {bench_parameters.nodes} nodes (input rate: {r:,} tx/s, batch size: {b} bytes)')
                 # Run the benchmark.
                 for i in range(bench_parameters.runs):
                     Print.heading(f'Run {i+1}/{bench_parameters.runs}')
                     try:
                         self._run_single(
-                            r, committee_copy, bench_parameters, debug
+                            r, committee_copy, bench_parameters, b, debug
                         )
 
                         faults = bench_parameters.faults
                         logger = self._logs(committee_copy, faults)
                         logger.print(PathMaker.result_file(
                             faults,
-                            n, 
+                            bench_parameters.nodes,
                             bench_parameters.workers,
                             bench_parameters.collocate,
-                            r, 
-                            bench_parameters.tx_size, 
+                            r,
+                            bench_parameters.tx_size,
                         ))
                     except (subprocess.SubprocessError, GroupException, ParseError) as e:
                         self.kill(hosts=selected_hosts)

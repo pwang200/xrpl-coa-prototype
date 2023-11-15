@@ -16,9 +16,10 @@ def local(ctx, debug=True):
         'faults': 0,
         'nodes': 5,
         'workers': 1,
-        'rate': 50_000,
+        'rate': 20_000,
         'tx_size': 512,
-        'duration': 120,
+        'batch_size': 50_000,  # bytes
+        'duration': 20,
     }
     node_params = {
         'header_size': 1_000,  # bytes
@@ -26,7 +27,6 @@ def local(ctx, debug=True):
         'gc_depth': 50,  # rounds
         'sync_retry_delay': 10_000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
-        'batch_size': 1,  # bytes
         'max_batch_delay': 200  # ms
     }
     try:
@@ -55,7 +55,7 @@ def destroy(ctx):
 
 
 @task
-def start(ctx, max=2):
+def start(ctx, max=5):
     ''' Start at most `max` machines per data center '''
     try:
         InstanceManager.make().start_instances(max)
@@ -95,12 +95,13 @@ def remote(ctx, debug=False):
     ''' Run benchmarks on AWS '''
     bench_params = {
         'faults': 0,
-        'nodes': [5],
+        'nodes': 5,
         'workers': 1,
         'collocate': True,
         'rate': [30_000],
-        'tx_size': 512,
+        'tx_size': 177,
         'duration': 120,
+        'batch_size': [1],  # bytes
         'runs': 1,
     }
     node_params = {
@@ -109,7 +110,6 @@ def remote(ctx, debug=False):
         'gc_depth': 50,  # rounds
         'sync_retry_delay': 10_000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
-        'batch_size': 1,  # bytes
         'max_batch_delay': 200  # ms
     }
     try:
