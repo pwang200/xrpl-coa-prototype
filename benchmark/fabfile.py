@@ -101,7 +101,7 @@ def remote(ctx, debug=False):
         'rate': [30_000],
         'tx_size': 177,
         'duration': 20,
-        'batch_size': [500_000],  # bytes
+        'batch_size': [1],  # bytes
         'runs': 1,
     }
     node_params = {
