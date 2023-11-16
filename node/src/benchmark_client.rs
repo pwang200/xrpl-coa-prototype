@@ -1,17 +1,22 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use anyhow::{Context, Result};
-use bytes::BufMut as _;
-use bytes::BytesMut;
+// use bytes::BufMut as _;
+// use bytes::BytesMut;
 use clap::{crate_name, crate_version, App, AppSettings};
 use env_logger::Env;
 use futures::future::join_all;
 use futures::sink::SinkExt as _;
-use log::{info, warn};
-use rand::Rng;
+use log::{debug, info, warn};
+//use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::time::{interval, sleep, Duration, Instant};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use crypto::{generate_production_keypair, PublicKey, SecretKey};
+use worker::Transaction;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use bytes::Bytes;
+//use worker::FANOUT;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -74,6 +79,19 @@ async fn main() -> Result<()> {
     client.send().await.context("Failed to submit transactions")
 }
 
+async fn fanout(tag: u64, tx_txns: Sender<Transaction>) {
+    let (public_key, secret_key) = generate_production_keypair();
+    let mut data = 0u64;
+    info!("fanout {}", tag);
+    loop {
+        let tx = Transaction::new(tag, data, public_key.clone(), &secret_key);
+        // let good_sig = tx.verify();
+        // info!("SigTestSign {}", good_sig);
+        tx_txns.send(tx).await;
+        data += 1;
+    }
+}
+
 struct Client {
     target: SocketAddr,
     size: usize,
@@ -85,6 +103,8 @@ impl Client {
     pub async fn send(&self) -> Result<()> {
         const PRECISION: u64 = 20; // Sample precision.
         const BURST_DURATION: u64 = 1000 / PRECISION;
+        const FANOUT: u64 = worker::FANOUT as u64;
+        const CHANNEL_CAPACITY: usize = 250_000;
 
         // The transaction size must be at least 16 bytes to ensure all txs are different.
         if self.size < 9 {
@@ -100,12 +120,20 @@ impl Client {
 
         // Submit all transactions.
         let burst = self.rate / PRECISION;
-        let mut tx = BytesMut::with_capacity(self.size);
+        assert_eq!(burst % FANOUT, 0);
+        //let mut tx = BytesMut::with_capacity(self.size);
         let mut counter = 0;
-        let mut r = rand::thread_rng().gen();
+        //let mut r = rand::thread_rng().gen();
         let mut transport = Framed::new(stream, LengthDelimitedCodec::new());
         let interval = interval(Duration::from_millis(BURST_DURATION));
         tokio::pin!(interval);
+
+        let mut tx_sources = Vec::new();
+        for tag in 0..FANOUT {
+            let (tx_txns, rx_txns) = channel(CHANNEL_CAPACITY);
+            tokio::task::spawn(fanout(tag, tx_txns));
+            tx_sources.push(rx_txns);
+        }
 
         // NOTE: This log entry is used to compute performance.
         info!("Start sending transactions");
@@ -115,21 +143,10 @@ impl Client {
             let now = Instant::now();
 
             for x in 0..burst {
-                if x == counter % burst {
-                    // NOTE: This log entry is used to compute performance.
-                    info!("Sending sample transaction {}", counter);
-
-                    tx.put_u8(0u8); // Sample txs start with 0.
-                    tx.put_u64(counter); // This counter identifies the tx.
-                } else {
-                    r += 1;
-                    tx.put_u8(1u8); // Standard txs start with 1.
-                    tx.put_u64(r); // Ensures all clients send different txs.
-                };
-
-                tx.resize(self.size, 0u8);
-                let bytes = tx.split().freeze();
-                if let Err(e) = transport.send(bytes).await {
+                //info!("waiting...");
+                let tx = tx_sources[(x % FANOUT) as usize].recv().await.unwrap();
+                let bytes = bincode::serialize(&tx).unwrap();
+                if let Err(e) = transport.send(Bytes::from(bytes)).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
                 }
@@ -140,6 +157,7 @@ impl Client {
             }
             counter += 1;
         }
+
         Ok(())
     }
 
