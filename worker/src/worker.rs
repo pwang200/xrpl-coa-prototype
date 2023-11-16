@@ -11,12 +11,13 @@ use config::{Committee, Parameters, WorkerId};
 use crypto::{Digest, PublicKey};
 use futures::sink::SinkExt as _;
 use log::{error, info, warn};
-use network::{MessageHandler, Receiver, Writer};
+use network::{MessageHandler, Writer};
 use primary::PrimaryWorkerMessage;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
-use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
+use crate::FANOUT;
 
 #[cfg(test)]
 #[path = "tests/worker_tests.rs"]
@@ -24,6 +25,7 @@ pub mod worker_tests;
 
 /// The default channel capacity for each channel of the worker.
 pub const CHANNEL_CAPACITY: usize = 1_000_000;
+const SIG_CHANNEL_CAPACITY: usize = 250_000;
 
 /// The primary round number.
 // TODO: Move to the primary.
@@ -109,7 +111,7 @@ impl Worker {
             .expect("Our public key or worker id is not in the committee")
             .primary_to_worker;
         address.set_ip("0.0.0.0".parse().unwrap());
-        Receiver::spawn(
+        network::Receiver::spawn(
             address,
             /* handler */
             PrimaryReceiverHandler { tx_synchronizer },
@@ -140,6 +142,14 @@ impl Worker {
         let (tx_quorum_waiter, rx_quorum_waiter) = channel(CHANNEL_CAPACITY);
         let (tx_processor, rx_processor) = channel(CHANNEL_CAPACITY);
 
+        let mut tx_sig_verifiers = Vec::new();
+        for _ in 0..FANOUT {
+            let (tx_sig, rx_sig) = channel(SIG_CHANNEL_CAPACITY);
+            tokio::task::spawn(sig_verify(rx_sig, tx_batch_maker.clone()));
+            tx_sig_verifiers.push(tx_sig);
+        }
+        //  let sig_verifiers = SigVerifiersChannels::new_and_spawn(tx_batch_maker);
+
         // We first receive clients' transactions from the network.
         let mut address = self
             .committee
@@ -147,9 +157,9 @@ impl Worker {
             .expect("Our public key or worker id is not in the committee")
             .transactions;
         address.set_ip("0.0.0.0".parse().unwrap());
-        Receiver::spawn(
+        network::Receiver::spawn(
             address,
-            /* handler */ TxReceiverHandler { tx_batch_maker },
+            /* handler */ TxReceiverHandler { tx_sig_verifiers },
         );
 
         // The transactions are sent to the `BatchMaker` that assembles them into batches. It then broadcasts
@@ -206,7 +216,7 @@ impl Worker {
             .expect("Our public key or worker id is not in the committee")
             .worker_to_worker;
         address.set_ip("0.0.0.0".parse().unwrap());
-        Receiver::spawn(
+        network::Receiver::spawn(
             address,
             /* handler */
             WorkerReceiverHandler {
@@ -243,17 +253,27 @@ impl Worker {
 /// Defines how the network receiver handles incoming transactions.
 #[derive(Clone)]
 struct TxReceiverHandler {
-    tx_batch_maker: Sender<Transaction>,
+    //tx_batch_maker: Sender<Transaction>,
+    tx_sig_verifiers: Vec<Sender<Transaction>>,
+    //idx: usize,
+    //sig_verifiers: SigVerifiersChannels,
 }
 
 #[async_trait]
 impl MessageHandler for TxReceiverHandler {
     async fn dispatch(&self, _writer: &mut Writer, message: Bytes) -> Result<(), Box<dyn Error>> {
         // Send the transaction to the batch maker.
-        self.tx_batch_maker
-            .send(message.to_vec())
+        // let tx : crate::Transaction = bincode::deserialize(&message).unwrap();
+        // let good_sig = tx.verify();
+        // debug!("SigTestVerify {}", good_sig);
+        let tx = message.to_vec();
+        let idx = tx[tx.len() - 10] as usize % FANOUT;
+        self.tx_sig_verifiers[idx % FANOUT]
+            .send(tx)
             .await
             .expect("Failed to send transaction");
+        //info!("idx {}", idx);
+        //self.sig_verifiers.send(message.to_vec()).await;
 
         // Give the change to schedule other tasks.
         tokio::task::yield_now().await;
@@ -315,5 +335,40 @@ impl MessageHandler for PrimaryReceiverHandler {
                 .expect("Failed to send transaction"),
         }
         Ok(())
+    }
+}
+//
+// struct SigVerifiersChannels {
+//     tx_sig_verifiers: Vec<Sender<Transaction>>,
+// }
+//
+// impl SigVerifiersChannels {
+//     pub fn new_and_spawn(tx_batch_maker: Sender<Transaction>) -> Self {
+//         let mut tx_sig_verifiers = Vec::new();
+//         for _ in 0..FANOUT {
+//             let (tx_sig, rx_sig) = channel(SIG_CHANNEL_CAPACITY);
+//             tokio::task::spawn(sig_verify(rx_sig, tx_batch_maker.clone()));
+//             tx_sig_verifiers.push(tx_sig);
+//         }
+//         Self { tx_sig_verifiers }
+//     }
+//
+//     pub async fn send(&self, tx: Transaction) {
+//         let idx = tx[tx.len() - 10] as usize % FANOUT;
+//         self.tx_sig_verifiers[idx]
+//             .send(tx)
+//             .await
+//             .expect("Failed to send transaction");
+//         info!("idx {}", idx);
+//     }
+// }
+
+async fn sig_verify(mut rx_sig_verifier: Receiver<Transaction>, tx_batch_maker: Sender<Transaction>) {
+    loop {
+        let message = rx_sig_verifier.recv().await.unwrap();
+        let tx: crate::Transaction = bincode::deserialize(&message).unwrap();
+        let good_sig = tx.verify();
+        //info!("sig {}", good_sig);
+        tx_batch_maker.send(message).await.expect("Failed to send transaction");
     }
 }
