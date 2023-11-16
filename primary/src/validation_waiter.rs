@@ -87,7 +87,9 @@ impl LedgerMaster {
                     info!("Fully validated ledger {:?} len {:?}", l.id, l.batch_set.len());
                     #[cfg(feature = "benchmark")]
                     for (batch, _) in &l.batch_set {
-                        info!("Committed {:?} ", batch);
+                        if *batch.0.get(0).unwrap() == 0u8 {
+                            info!("Committed {:?} ", batch);
+                        }
                     }
                 }
                 self.tx_full_validated_ledgers.send(ledgers).await.expect("Failed to send.");
