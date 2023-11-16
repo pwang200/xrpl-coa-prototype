@@ -60,7 +60,7 @@ pub enum PrimaryConsensusMessage {
     Validation(SignedValidation),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Batches {
     Batches(Vec<(Digest, WorkerId)>)
 }

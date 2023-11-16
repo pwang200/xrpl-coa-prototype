@@ -32,6 +32,7 @@ struct LedgerMaster {
     hash_to_validators: HashMap<Digest, HashSet<PublicKey>>,
     pub fully_validated: LedgerIndex,
     pub quorum: usize,
+    log_counter: u8
 }
 
 impl LedgerMaster {
@@ -44,6 +45,7 @@ impl LedgerMaster {
             hash_to_validators: HashMap::new(),
             fully_validated: 0,
             quorum,
+            log_counter: 0
         }
     }
 
@@ -84,15 +86,18 @@ impl LedgerMaster {
                 }
 
                 for l in &ledgers {
-                    info!("Fully validated ledger {:?}", l.id);
+                    info!("Fully validated ledger {:?} len {:?}", l.id, l.batch_set.len());
                     #[cfg(feature = "benchmark")]
                     for (batch, _) in &l.batch_set {
-                        if *batch.0.get(0).unwrap() == 0 as u8 {
+                        if self.log_counter == 15 {
                             info!("Committed {:?} ", batch);
+                            self.log_counter = 0;
+                        } else {
+                            self.log_counter += 1;
                         }
                     }
                 }
-                self.tx_full_validated_ledgers.send(ledgers).await;
+                self.tx_full_validated_ledgers.send(ledgers).await.expect("Failed to send.");
             }
         }
     }

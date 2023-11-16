@@ -44,7 +44,8 @@ class LocalBench:
 
         try:
             Print.info('Setting up testbed...')
-            nodes, rate = self.nodes[0], self.rate[0]
+            nodes = self.nodes
+            rate = self.rate[0]
 
             # Cleanup all files.
             cmd = f'{CommandMaker.clean_logs()} ; {CommandMaker.cleanup()}'
@@ -93,6 +94,7 @@ class LocalBench:
                     PathMaker.key_file(i),
                     PathMaker.committee_file(),
                     PathMaker.db_path(i),
+                    self.bench_parameters.batch_size[0],
                     PathMaker.parameters_file(),
                     debug=debug
                 )
@@ -106,6 +108,7 @@ class LocalBench:
                         PathMaker.key_file(i),
                         PathMaker.committee_file(),
                         PathMaker.db_path(i, id),
+                        self.bench_parameters.batch_size[0],
                         PathMaker.parameters_file(),
                         id,  # The worker's id.
                         debug=debug

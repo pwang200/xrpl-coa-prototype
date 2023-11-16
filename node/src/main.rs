@@ -1,4 +1,5 @@
 use std::env;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 // Copyright(C) Facebook, Inc. and its affiliates.
@@ -41,6 +42,7 @@ async fn main() -> Result<()> {
                 .args_from_usage("--committee=<FILE> 'The file containing committee information'")
                 .args_from_usage("--parameters=[FILE] 'The file containing the node parameters'")
                 .args_from_usage("--store=<PATH> 'The path where to create the data store'")
+                .args_from_usage("--batch_size=<NUM> 'The number of bytes per batch'")
                 .subcommand(SubCommand::with_name("primary").about("Run a single primary"))
                 .subcommand(
                     SubCommand::with_name("worker")
@@ -80,6 +82,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     let committee_file = matches.value_of("committee").unwrap();
     let parameters_file = matches.value_of("parameters");
     let store_path = matches.value_of("store").unwrap();
+    let batch_size = usize::from_str(matches.value_of("batch_size").unwrap()).unwrap();
 
     // Read the committee and node's keypair from file.
     let keypair = KeyPair::import(key_file).context("Failed to load the node's keypair")?;
@@ -89,7 +92,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     // Load default parameters if none are specified.
     let parameters = match parameters_file {
         Some(filename) => {
-            Parameters::import(filename).context("Failed to load the node's parameters")?
+            Parameters::import(filename, batch_size).context("Failed to load the node's parameters")?
         }
         None => Parameters::default(),
     };

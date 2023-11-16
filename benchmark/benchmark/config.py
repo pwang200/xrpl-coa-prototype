@@ -170,7 +170,7 @@ class NodeParameters:
             inputs += [json['gc_depth']]
             inputs += [json['sync_retry_delay']]
             inputs += [json['sync_retry_nodes']]
-            inputs += [json['batch_size']]
+            # inputs += [json['batch_size']]
             inputs += [json['max_batch_delay']]
         except KeyError as e:
             raise ConfigError(f'Malformed parameters: missing key {e}')
@@ -191,11 +191,11 @@ class BenchParameters:
         try:
             self.faults = int(json['faults'])
 
-            nodes = json['nodes']
-            nodes = nodes if isinstance(nodes, list) else [nodes]
-            if not nodes or any(x <= 1 for x in nodes):
-                raise ConfigError('Missing or invalid number of nodes')
-            self.nodes = [int(x) for x in nodes]
+            # nodes = json['nodes']
+            # nodes = nodes if isinstance(nodes, list) else [nodes]
+            # if not nodes or any(x <= 1 for x in nodes):
+            #     raise ConfigError('Missing or invalid number of nodes')
+            self.nodes = int(json['nodes'])
 
             rate = json['rate']
             rate = rate if isinstance(rate, list) else [rate]
@@ -203,7 +203,6 @@ class BenchParameters:
                 raise ConfigError('Missing input rate')
             self.rate = [int(x) for x in rate]
 
-            
             self.workers = int(json['workers'])
 
             if 'collocate' in json:
@@ -216,13 +215,19 @@ class BenchParameters:
             self.duration = int(json['duration'])
 
             self.runs = int(json['runs']) if 'runs' in json else 1
+
+            batch_sizes = json['batch_size']
+            batch_sizes = batch_sizes if isinstance(batch_sizes, list) else [batch_sizes]
+            if not batch_sizes or any(x < 1 for x in batch_sizes):
+                raise ConfigError('Missing or invalid batch_size.')
+            self.batch_size = [int(x) for x in batch_sizes]
         except KeyError as e:
             raise ConfigError(f'Malformed bench parameters: missing key {e}')
 
         except ValueError:
             raise ConfigError('Invalid parameters type')
 
-        if min(self.nodes) <= self.faults:
+        if self.nodes <= self.faults:
             raise ConfigError('There should be more nodes than faults')
 
 
