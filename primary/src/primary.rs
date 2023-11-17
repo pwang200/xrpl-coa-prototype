@@ -140,7 +140,6 @@ impl Primary {
             /* handler */
             WorkerReceiverHandler {
                 tx_worker_batches,
-                //tx_store_batches,
             },
         );
         info!(
@@ -149,7 +148,11 @@ impl Primary {
         );
 
         // Receives batch digests from workers. They are only used to validate proposals.
-        PayloadReceiver::spawn(store.clone(), rx_worker_batches, tx_proposal_waiter_batches, tx_primary_consensus_data);
+        PayloadReceiver::spawn(store.clone(),
+                               rx_worker_batches,
+                               tx_proposal_waiter_batches,
+                               tx_primary_consensus_data,
+                               parameters.batch_size);
 
         // The `Helper` is dedicated to reply to ledger requests from other primaries.
         Helper::spawn(committee.clone(), store.clone(), rx_ledger_requests);

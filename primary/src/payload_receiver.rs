@@ -5,8 +5,7 @@ use crypto::Digest;
 use store::Store;
 use tokio::sync::mpsc::{Sender, Receiver};
 use crate::Batches;
-use log::{debug, info};
-use tokio::time::sleep;
+use log::{info};
 
 /// Receives batches' digests of other authorities. These are only needed to verify incoming
 /// headers (ie. make sure we have their payload).
@@ -20,7 +19,6 @@ pub struct PayloadReceiver {
     tx_consensus: Sender<Batches>,
     batch_buf: Vec<(Digest, WorkerId)>,
     flush_size: usize,
-    log_count: u8,
 }
 
 impl PayloadReceiver {
@@ -39,20 +37,18 @@ impl PayloadReceiver {
                 tx_consensus,
                 batch_buf: Vec::with_capacity(100),
                 flush_size: if batch_size == 1 { 100 } else { 1 },
-                log_count: 0
             }.run().await;
         });
     }
 
     async fn run(&mut self) {
         while let Some((batch, worker_id)) = self.rx_store.recv().await {
-            if self.log_count == 15 {
-                #[cfg(feature = "benchmark")]
+            // log one in every 16 batches.
+            // in a 60 seconds test with input rate 20k per seconds,
+            // this is off by 0.3%, comparing to log every batch
+            #[cfg(feature = "benchmark")]
+            if batch.0[0] & 0x0f == 0u8 {
                 info!("Created {:?}", batch);
-
-                self.log_count = 0;
-            } else {
-                self.log_count += 1;
             }
 
             self.batch_buf.push((batch, worker_id));
