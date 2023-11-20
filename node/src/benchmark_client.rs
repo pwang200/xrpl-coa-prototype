@@ -1,13 +1,13 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use anyhow::{Context, Result};
-// use bytes::BufMut as _;
-// use bytes::BytesMut;
+use bytes::BufMut as _;
+use bytes::BytesMut;
 use clap::{crate_name, crate_version, App, AppSettings};
 use env_logger::Env;
 use futures::future::join_all;
 use futures::sink::SinkExt as _;
 use log::{debug, info, warn};
-//use rand::Rng;
+use rand::Rng;
 use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use tokio::time::{interval, sleep, Duration, Instant};
@@ -121,9 +121,9 @@ impl Client {
         // Submit all transactions.
         let burst = self.rate / PRECISION;
         assert_eq!(burst % FANOUT, 0);
-        //let mut tx = BytesMut::with_capacity(self.size);
+        let mut tx = BytesMut::with_capacity(self.size);
         let mut counter = 0;
-        //let mut r = rand::thread_rng().gen();
+        let mut r = rand::thread_rng().gen();
         let mut transport = Framed::new(stream, LengthDelimitedCodec::new());
         let interval = interval(Duration::from_millis(BURST_DURATION));
         tokio::pin!(interval);
@@ -143,10 +143,33 @@ impl Client {
             let now = Instant::now();
 
             for x in 0..burst {
-                //info!("waiting...");
-                let tx = tx_sources[(x % FANOUT) as usize].recv().await.unwrap();
-                let bytes = bincode::serialize(&tx).unwrap();
-                if let Err(e) = transport.send(Bytes::from(bytes)).await {
+                if x == counter % burst {
+                    // NOTE: This log entry is used to compute performance.
+                    info!("Sending sample transaction {}", counter);
+                    tx.put_u8(0u8); // Sample txs start with 0.
+                    tx.put_u64(counter); // This counter identifies the tx.
+                } else {
+                    r += 1;
+                    tx.put_u8(1u8); // Standard txs start with 1.
+                    tx.put_u64(r); // Ensures all clients send different txs.
+                };
+
+                let tx_data = tx_sources[(x % FANOUT) as usize].recv().await.unwrap();
+                let payload = bincode::serialize(&tx_data).unwrap();
+                tx.put_u8(payload.len() as u8);
+                tx.extend(payload.into_iter());
+                tx.resize(self.size, 0u8);
+                let bytes = tx.split().freeze();
+
+                // info!("HERE {:?}", bytes);
+                // let message = &bytes;
+                // let payload_len: u8 = bincode::deserialize(&message[(1+8) as usize .. (1+8+1) as usize]).unwrap();
+                // info!("HERE {:?}", &message[(1+8) as usize .. (1+8+1) as usize]);
+                // let t: crate::Transaction = bincode::deserialize(&message[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
+                // let good_sig = t.verify();
+                // info!("sig {}", good_sig);
+
+                if let Err(e) = transport.send(bytes).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
                 }
