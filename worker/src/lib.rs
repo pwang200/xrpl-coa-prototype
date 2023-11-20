@@ -16,13 +16,13 @@ use crypto::{PublicKey, SecretKey, Hash, Signature};
 mod common;
 
 pub use crate::worker::Worker;
-pub const FANOUT: usize = 1;
+pub const FANOUT: usize = 4;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Transaction {
     d1: u64,
     d2: u64,
-    pad: [u128; 16],
+    //pad: [u128; 16],
     pub public_key: PublicKey,
     pub sig: Signature,
 }
@@ -33,16 +33,16 @@ impl Transaction {
                public_key: PublicKey,
                secret_key: &SecretKey,
     ) -> Self {
-        let pad: [u128; 16] = Default::default();
-        let d = bincode::serialize(&(d1, d2, pad, public_key)).unwrap().as_slice().digest();
+        //let pad: [u128; 16] = Default::default();
+        let d = bincode::serialize(&(d1, d2, public_key)).unwrap().as_slice().digest();
         let sig = Signature::new(d.to_vec(), secret_key);
         // let sig = Default::default();
-        Self { d1, d2, pad, public_key, sig }
+        Self { d1, d2, public_key, sig }
     }
 
     pub fn verify(&self)-> bool {
         // true
-        let d = bincode::serialize(&(self.d1, self.d2, self.pad, self.public_key)).unwrap().as_slice().digest();
+        let d = bincode::serialize(&(self.d1, self.d2, self.public_key)).unwrap().as_slice().digest();
         self.sig.verify(&d, &self.public_key).is_ok()
     }
 }

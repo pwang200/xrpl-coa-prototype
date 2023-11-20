@@ -366,9 +366,11 @@ impl MessageHandler for PrimaryReceiverHandler {
 async fn sig_verify(mut rx_sig_verifier: Receiver<Transaction>, tx_batch_maker: Sender<Transaction>) {
     loop {
         let message = rx_sig_verifier.recv().await.unwrap();
-        let tx: crate::Transaction = bincode::deserialize(&message).unwrap();
+        // format : u8, u64, u8 (serialized tx len), serialized tx, padding
+        let payload_len: u8 = bincode::deserialize(&message[(1+8) as usize .. (1+8+1) as usize]).unwrap();
+        let tx: crate::Transaction = bincode::deserialize(&message[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
         let good_sig = tx.verify();
-        //info!("sig {}", good_sig);
+        // info!("sig {}", good_sig);
         tx_batch_maker.send(message).await.expect("Failed to send transaction");
     }
 }
