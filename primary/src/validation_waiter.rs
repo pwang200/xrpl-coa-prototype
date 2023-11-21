@@ -32,11 +32,18 @@ struct LedgerMaster {
     hash_to_validators: HashMap<Digest, HashSet<PublicKey>>,
     pub fully_validated: LedgerIndex,
     pub quorum: usize,
+
+    name: PublicKey,
+    committee: Committee,
+    network: SimpleSender,
 }
 
 impl LedgerMaster {
     pub fn new(tx_full_validated_ledgers: Sender<Vec<Ledger>>,
-               quorum: usize) -> Self {
+               quorum: usize,
+               name: PublicKey,
+               committee: Committee,
+    ) -> Self {
         Self {
             tx_full_validated_ledgers,
             index_to_hash: HashMap::new(),
@@ -44,6 +51,9 @@ impl LedgerMaster {
             hash_to_validators: HashMap::new(),
             fully_validated: 0,
             quorum,
+            name,
+            committee,
+            network: SimpleSender::new(),
         }
     }
 
@@ -85,11 +95,23 @@ impl LedgerMaster {
 
                 for l in &ledgers {
                     info!("Fully validated ledger {:?} len {:?}", l.id, l.batch_set.len());
-                    #[cfg(feature = "benchmark")]
-                    for (batch, _) in &l.batch_set {
+                    let mut txns = HashMap::new();
+                    for (batch, worker) in &l.batch_set {
+                        #[cfg(feature = "benchmark")]
                         if batch.0[0] & 0x0f == 0u8 {
                             info!("Committed {:?} ", batch);
                         }
+                        txns.entry(worker).or_insert_with(Vec::new).push(batch.clone());
+                    }
+                    for (worker, batches) in txns{
+                        let address = self.committee
+                            .worker(&self.name, worker)
+                            .expect("Author of valid Proposal is not in the committee")
+                            .primary_to_worker;
+                        let message = crate::PrimaryWorkerMessage::Execute(batches);
+                        let bytes = bincode::serialize(&message)
+                            .expect("Failed to send batches to execute");
+                        self.network.send(address, Bytes::from(bytes)).await;
                     }
                 }
                 self.tx_full_validated_ledgers.send(ledgers).await.expect("Failed to send.");
@@ -138,7 +160,6 @@ pub struct ValidationWaiter {
     validation_dependencies: HashMap<Digest, Vec<SignedValidation>>,
     ledger_dependencies: HashMap<Digest, (Vec<Ledger>, PublicKey)>, // contains pending acquires
 
-    /// Network driver allowing to send messages.
     network: SimpleSender,
 }
 
@@ -158,7 +179,10 @@ impl ValidationWaiter {
             Self {
                 ledger_master: LedgerMaster::new(
                     tx_full_validated_ledgers,
-                    (committee.authorities.len() as f32 * 0.80).ceil() as usize, ),
+                    (committee.authorities.len() as f32 * 0.80).ceil() as usize,
+                    name.clone(),
+                    committee.clone(),
+                ),
                 name,
                 committee,
                 store,

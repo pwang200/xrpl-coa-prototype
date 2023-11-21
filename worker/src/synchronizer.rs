@@ -174,7 +174,8 @@ impl Synchronizer {
                             }
                         }
                         self.pending.retain(|_, (r, _, _)| r > &mut gc_round);
-                    }
+                    },
+                    PrimaryWorkerMessage::Execute(_) =>{},
                 },
 
                 // Stream out the futures of the `FuturesUnordered` that completed.

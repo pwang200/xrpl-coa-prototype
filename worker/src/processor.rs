@@ -1,13 +1,17 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
-use crate::worker::SerializedBatchDigestMessage;
+use crate::worker::{SerializedBatchDigestMessage, WorkerMessage};
 use config::WorkerId;
 use crypto::Digest;
 use ed25519_dalek::Digest as _;
 use ed25519_dalek::Sha512;
 use primary::WorkerPrimaryMessage;
 use std::convert::TryInto;
+use log::{error, info, warn};
 use store::Store;
 use tokio::sync::mpsc::{Receiver, Sender};
+use bytes::Bytes;
+use crate::batch_maker::Batch;
+use crate::Transaction;
 
 #[cfg(test)]
 #[path = "tests/processor_tests.rs"]
@@ -51,6 +55,49 @@ impl Processor {
                     .send(message)
                     .await
                     .expect("Failed to send digest");
+            }
+        });
+    }
+}
+
+pub struct Executor;
+
+impl Executor {
+    pub fn spawn(
+        mut store: Store,
+        mut rx_batch: Receiver<Vec<Digest>>,
+    ) {
+        tokio::spawn(async move {
+            let mut count = 0u32;
+            while let Some(batches) = rx_batch.recv().await {
+                for hash in batches{
+                    match store.read(hash.to_vec()).await {
+                        Ok(None) => {
+                            warn!("DB don't have batch {}", hash);
+                        },
+                        Ok(Some(tx_data)) => {
+                            let bs = Bytes::from(tx_data);
+                            match bincode::deserialize(&*bs).expect("Failed to deserialize batch"){
+                                WorkerMessage::Batch(batch) => {
+                                    for tx in batch{
+                                        let payload_len: u8 = bincode::deserialize(&tx[(1+8) as usize .. (1+8+1) as usize]).unwrap();
+                                        let t: Transaction = bincode::deserialize(&tx[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
+                                        //info!("batch {:?}, tx sig {}", hash, t.verify());
+                                        store.write(t.get_key(), t.get_value()).await;
+                                        count += 1;
+                                        if count % 10000 == 0 {
+                                            info!("count {}", count);
+                                        }
+                                    }
+                                },
+                                _ => panic!("Unexpected message"),
+                            }
+                        },
+                        Err(e) => {
+                            error!("{}", e);
+                        }
+                    }
+                }
             }
         });
     }

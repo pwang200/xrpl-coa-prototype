@@ -1,8 +1,8 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
-use crate::batch_maker::{Batch, BatchMaker, Transaction};
+use crate::batch_maker::{Batch, BatchMaker, TransactionData};
 use crate::helper::Helper;
 use crate::primary_connector::PrimaryConnector;
-use crate::processor::{Processor, SerializedBatchMessage};
+use crate::processor::{Executor, Processor, SerializedBatchMessage};
 use crate::quorum_waiter::QuorumWaiter;
 use crate::synchronizer::Synchronizer;
 use async_trait::async_trait;
@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use crate::FANOUT;
+use crate::{FANOUT, Transaction};
 
 #[cfg(test)]
 #[path = "tests/worker_tests.rs"]
@@ -103,6 +103,7 @@ impl Worker {
     /// Spawn all tasks responsible to handle messages from our primary.
     fn handle_primary_messages(&self) {
         let (tx_synchronizer, rx_synchronizer) = channel(CHANNEL_CAPACITY);
+        let (tx_executor, rx_executor) = channel(CHANNEL_CAPACITY);
 
         // Receive incoming messages from our primary.
         let mut address = self
@@ -114,7 +115,7 @@ impl Worker {
         network::Receiver::spawn(
             address,
             /* handler */
-            PrimaryReceiverHandler { tx_synchronizer },
+            PrimaryReceiverHandler { tx_synchronizer, tx_executor},
         );
 
         // The `Synchronizer` is responsible to keep the worker in sync with the others. It handles the commands
@@ -129,6 +130,8 @@ impl Worker {
             self.parameters.sync_retry_nodes,
             /* rx_message */ rx_synchronizer,
         );
+
+        Executor::spawn(self.store.clone(), rx_executor);
 
         info!(
             "Worker {} listening to primary messages on {}",
@@ -253,7 +256,7 @@ impl Worker {
 #[derive(Clone)]
 struct TxReceiverHandler {
     //tx_batch_maker: Sender<Transaction>,
-    tx_sig_verifiers: Vec<Sender<Transaction>>,
+    tx_sig_verifiers: Vec<Sender<TransactionData>>,
     //idx: usize,
     //sig_verifiers: SigVerifiersChannels,
 }
@@ -315,6 +318,7 @@ impl MessageHandler for WorkerReceiverHandler {
 #[derive(Clone)]
 struct PrimaryReceiverHandler {
     tx_synchronizer: Sender<PrimaryWorkerMessage>,
+    tx_executor: Sender<Vec<Digest>>,
 }
 
 #[async_trait]
@@ -327,15 +331,31 @@ impl MessageHandler for PrimaryReceiverHandler {
         // Deserialize the message and send it to the synchronizer.
         match bincode::deserialize(&serialized) {
             Err(e) => error!("Failed to deserialize primary message: {}", e),
-            Ok(message) => self
-                .tx_synchronizer
-                .send(message)
-                .await
-                .expect("Failed to send transaction"),
+            Ok(message) => {
+                match message {
+                    PrimaryWorkerMessage::Synchronize(_, _) => {
+                        self
+                            .tx_synchronizer
+                            .send(message)
+                            .await
+                            .expect("Failed to send transaction");
+                    }
+                    PrimaryWorkerMessage::Cleanup(_) => {}
+                    PrimaryWorkerMessage::Execute(batches) => {
+                        self
+                            .tx_executor.send(batches)
+                            .await
+                            .expect("Failed to send batches");
+                    }
+                }
+            }
         }
         Ok(())
     }
 }
+
+
+
 //
 // struct SigVerifiersChannels {
 //     tx_sig_verifiers: Vec<Sender<Transaction>>,
@@ -362,14 +382,14 @@ impl MessageHandler for PrimaryReceiverHandler {
 //     }
 // }
 
-async fn sig_verify(mut rx_sig_verifier: Receiver<Transaction>, tx_batch_maker: Sender<Transaction>) {
+async fn sig_verify(mut rx_sig_verifier: Receiver<TransactionData>, tx_batch_maker: Sender<TransactionData>) {
     loop {
         let message = rx_sig_verifier.recv().await.unwrap();
         // format : u8, u64, u8 (serialized tx len), serialized tx, padding
         let payload_len: u8 = bincode::deserialize(&message[(1+8) as usize .. (1+8+1) as usize]).unwrap();
-        let tx: crate::Transaction = bincode::deserialize(&message[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
+        let tx: Transaction = bincode::deserialize(&message[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
         let good_sig = tx.verify();
-        // info!("sig {}", good_sig);
+        // info!("tx sig {}", good_sig);
         tx_batch_maker.send(message).await.expect("Failed to send transaction");
     }
 }

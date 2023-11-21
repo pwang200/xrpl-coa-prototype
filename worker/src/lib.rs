@@ -45,4 +45,12 @@ impl Transaction {
         let d = bincode::serialize(&(self.d1, self.d2, self.public_key)).unwrap().as_slice().digest();
         self.sig.verify(&d, &self.public_key).is_ok()
     }
+
+    pub fn get_key(&self) -> Vec<u8> {
+        (self.d2 & 0xffffu64).to_be_bytes().to_vec()
+    }
+
+    pub fn get_value(&self) -> Vec<u8> {
+        self.d2.to_be_bytes().to_vec()
+    }
 }

@@ -20,8 +20,8 @@ use tokio::time::{sleep, Duration, Instant};
 #[path = "tests/batch_maker_tests.rs"]
 pub mod batch_maker_tests;
 
-pub type Transaction = Vec<u8>;
-pub type Batch = Vec<Transaction>;
+pub type TransactionData = Vec<u8>;
+pub type Batch = Vec<TransactionData>;
 
 /// Assemble clients transactions into batches.
 pub struct BatchMaker {
@@ -30,7 +30,7 @@ pub struct BatchMaker {
     /// The maximum delay after which to seal the batch (in ms).
     max_batch_delay: u64,
     /// Channel to receive transactions from the network.
-    rx_transaction: Receiver<Transaction>,
+    rx_transaction: Receiver<TransactionData>,
     /// Output channel to deliver sealed batches to the `QuorumWaiter`.
     tx_message: Sender<QuorumWaiterMessage>,
     /// The network addresses of the other workers that share our worker id.
@@ -47,7 +47,7 @@ impl BatchMaker {
     pub fn spawn(
         batch_size: usize,
         max_batch_delay: u64,
-        rx_transaction: Receiver<Transaction>,
+        rx_transaction: Receiver<TransactionData>,
         tx_message: Sender<QuorumWaiterMessage>,
         workers_addresses: Vec<(PublicKey, SocketAddr)>,
     ) {
