@@ -133,6 +133,13 @@ class InstanceManager:
             progress = progress_bar(
                 self.clients.values(), prefix=f'Creating {size} instances'
             )
+            # ripplex:operations:owner	nkramer
+            # ripplex:cost-allocation:environment	dev
+            # ripplex:cost-allocation:team	Interoperability
+            # ripplex:operations:expires-at	10 days
+            # ripplex:cost-allocation:service	interoperablity
+            # ripplex:cost-allocation:project	NKramer
+            # ripplex:operations:importance	low
             for client in progress:
                 client.run_instances(
                     ImageId=self._get_ami(client),
@@ -146,7 +153,28 @@ class InstanceManager:
                         'Tags': [{
                             'Key': 'Name',
                             'Value': self.INSTANCE_NAME
-                        }]
+                        }, {
+                            'Key': 'ripplex:operations:owner',
+                            'Value': 'nkramer'
+                        }, {
+                            'Key': 'ripplex:cost-allocation:team',
+                            'Value': 'Interoperability'
+                        }, {
+                            'Key': 'ripplex:operations:expires-at',
+                            'Value': '10 days'
+                        }, {
+                            'Key': 'ripplex:cost-allocation:service',
+                            'Value': 'interoperablity'
+                        }, {
+                            'Key': 'ripplex:cost-allocation:environment',
+                            'Value': 'dev'
+                        }, {
+                            'Key': 'ripplex:cost-allocation:project',
+                            'Value': 'NKramer'
+                        }, {
+                            'Key': 'ripplex:operations:importance',
+                            'Value': 'low'
+                        }, ]
                     }],
                     EbsOptimized=True,
                     BlockDeviceMappings=[{
