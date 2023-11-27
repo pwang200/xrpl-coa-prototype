@@ -1,13 +1,13 @@
 {
     "key": {
-        "name": "noah-ssh",
-        "path": "/Users/nkramer/.ssh/aws"
+        "name": "Peng-ssh",
+        "path": "/home/pwang/.ssh/aws"
     },
     "port": 5000,
     "repo": {
         "name": "xrpl-coa-prototype",
-        "url": "https://github.com/nkramer44/xrpl-coa-prototype",
-        "branch": "xrpl-consensus"
+        "url": "https://github.com/pwang200/xrpl-coa-prototype",
+        "branch": "tx-DB"
     },
     "consensus-repo": {
         "name": "xrpl-consensus-rs",
@@ -16,6 +16,6 @@
     },
     "instances": {
         "type": "m5d.8xlarge",
-        "regions": ["us-east-1"]
+        "regions": ["us-west-2"]
     }
 }

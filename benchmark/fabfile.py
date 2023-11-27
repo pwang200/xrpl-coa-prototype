@@ -98,14 +98,14 @@ def remote(ctx, debug=False):
         'nodes': 5,
         'workers': 1,
         'collocate': True,
-        # 'rate': [20_000],
-        'rate': [20_000, 40_000, 80_000, 160_000, 360_000, 720_000, 1_000_000, 2_000_000],
+        'rate': [480_000],
+        #'rate': [40_000, 80_000, 160_000, 360_000, 720_000],
         'tx_size': 177,
         # 'duration': 20,
         'duration': 300,
-        # 'batch_size': [1],  # bytes
-        'batch_size': [1, 250_000, 500_000, 1_000_000],  # bytes
-        'runs': 5,
+        'batch_size': [500_000],  # bytes
+        # 'batch_size': [1, 250_000, 500_000, 1_000_000],  # bytes
+        'runs': 1,
     }
     node_params = {
         'header_size': 1_000,  # bytes

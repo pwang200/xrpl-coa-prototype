@@ -94,7 +94,7 @@ impl LedgerMaster {
                 }
 
                 for l in &ledgers {
-                    info!("Fully validated ledger {:?} len {:?}", l.id, l.batch_set.len());
+                    info!("Fully validated ledger {:?} sqn {} len {:?}", l.id, l.seq, l.batch_set.len());
                     let mut txns = HashMap::new();
                     for (batch, worker) in &l.batch_set {
                         #[cfg(feature = "benchmark")]

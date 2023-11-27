@@ -93,8 +93,8 @@ impl BatchMaker {
                 }
             }
 
-            // Give the change to schedule other tasks.
-            tokio::task::yield_now().await;
+            // // Give the change to schedule other tasks.
+            // tokio::task::yield_now().await;
         }
     }
 

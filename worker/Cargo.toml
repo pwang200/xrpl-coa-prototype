@@ -21,7 +21,6 @@ config = { path = "../config" }
 network = { path = "../network" }
 primary = { path = "../primary" }
 
-[dev-dependencies]
 rand = "0.7.3"
 
 [features]

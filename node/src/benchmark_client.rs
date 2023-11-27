@@ -16,7 +16,6 @@ use crypto::{generate_production_keypair, PublicKey, SecretKey};
 use worker::Transaction;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use bytes::Bytes;
-//use worker::FANOUT;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -79,16 +78,39 @@ async fn main() -> Result<()> {
     client.send().await.context("Failed to submit transactions")
 }
 
-async fn fanout(tag: u64, tx_txns: Sender<Transaction>) {
+async fn fanout(tag: u64, burst: u64, tx_size: usize, jump: u64, mut r: u64, tx_txns: Sender<(u64, Vec<Bytes>)>) {
+    info!("fanout {}", tag);
     let (public_key, secret_key) = generate_production_keypair();
     let mut data = 0u64;
-    info!("fanout {}", tag);
+    let mut counter = tag;
+    let mut tx = BytesMut::with_capacity(tx_size);
     loop {
-        let tx = Transaction::new(tag, data, public_key.clone(), &secret_key);
-        // let good_sig = tx.verify();
-        // info!("SigTestSign {}", good_sig);
-        tx_txns.send(tx).await;
-        data += 1;
+        let mut txns = Vec::with_capacity(burst as usize);
+        for x in 0..burst {
+            if x == counter % burst {
+                tx.put_u8(0u8); // Sample txs start with 0.
+                tx.put_u64(counter); // This counter identifies the tx.
+            } else {
+                r += jump;
+                tx.put_u8(1u8); // Standard txs start with 1.
+                tx.put_u64(r); // Ensures all clients send different txs.
+            };
+
+            let t = Transaction::new(tag, data, public_key.clone(), &secret_key);
+            data += 1;
+            // let good_sig = t.verify();
+            // info!("SigTestSign {}", good_sig);
+
+            let payload = bincode::serialize(&t).unwrap();
+            tx.put_u8(payload.len() as u8);
+            tx.extend(payload.into_iter());
+            tx.resize(tx_size, 0u8);
+            let bytes = tx.split().freeze();
+            txns.push(bytes);
+        }
+
+        tx_txns.send((counter, txns)).await;
+        counter += jump;
     }
 }
 
@@ -122,7 +144,7 @@ impl Client {
         let burst = self.rate / PRECISION;
         assert_eq!(burst % FANOUT, 0);
         let mut tx = BytesMut::with_capacity(self.size);
-        let mut counter = 0;
+        let mut counter_expect = 0;
         let mut r = rand::thread_rng().gen();
         let mut transport = Framed::new(stream, LengthDelimitedCodec::new());
         let interval = interval(Duration::from_millis(BURST_DURATION));
@@ -131,7 +153,7 @@ impl Client {
         let mut tx_sources = Vec::new();
         for tag in 0..FANOUT {
             let (tx_txns, rx_txns) = channel(CHANNEL_CAPACITY);
-            tokio::task::spawn(fanout(tag, tx_txns));
+            tokio::task::spawn(fanout(tag, burst, self.size, FANOUT, r, tx_txns));
             tx_sources.push(rx_txns);
         }
 
@@ -142,43 +164,22 @@ impl Client {
             interval.as_mut().tick().await;
             let now = Instant::now();
 
-            for x in 0..burst {
-                if x == counter % burst {
-                    // NOTE: This log entry is used to compute performance.
-                    info!("Sending sample transaction {}", counter);
-                    tx.put_u8(0u8); // Sample txs start with 0.
-                    tx.put_u64(counter); // This counter identifies the tx.
-                } else {
-                    r += 1;
-                    tx.put_u8(1u8); // Standard txs start with 1.
-                    tx.put_u64(r); // Ensures all clients send different txs.
-                };
-
-                let tx_data = tx_sources[(x % FANOUT) as usize].recv().await.unwrap();
-                let payload = bincode::serialize(&tx_data).unwrap();
-                tx.put_u8(payload.len() as u8);
-                tx.extend(payload.into_iter());
-                tx.resize(self.size, 0u8);
-                let bytes = tx.split().freeze();
-
-                // info!("HERE {:?}", bytes);
-                // let message = &bytes;
-                // let payload_len: u8 = bincode::deserialize(&message[(1+8) as usize .. (1+8+1) as usize]).unwrap();
-                // info!("HERE {:?}", &message[(1+8) as usize .. (1+8+1) as usize]);
-                // let t: crate::Transaction = bincode::deserialize(&message[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
-                // let good_sig = t.verify();
-                // info!("sig {}", good_sig);
-
-                if let Err(e) = transport.send(bytes).await {
+            let (counter, txns) = tx_sources[(counter_expect % FANOUT) as usize].recv().await.unwrap();
+            assert!(counter == counter_expect);
+            // NOTE: This log entry is used to compute performance.
+            info!("Sending sample transaction {}", counter);
+            for tx in txns {
+                if let Err(e) = transport.send(tx).await {
                     warn!("Failed to send transaction: {}", e);
                     break 'main;
                 }
             }
+
             if now.elapsed().as_millis() > BURST_DURATION as u128 {
                 // NOTE: This log entry is used to compute performance.
-                warn!("Transaction rate too high for this client");
+                warn!("Transaction rate too high for this client. time {:?} ms, should be < {:?}", now.elapsed().as_millis(), BURST_DURATION);
             }
-            counter += 1;
+            counter_expect += 1;
         }
 
         Ok(())

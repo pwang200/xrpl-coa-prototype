@@ -15,18 +15,20 @@ use network::{MessageHandler, Writer};
 use primary::PrimaryWorkerMessage;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use rand::Rng;
 use store::Store;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use crate::{FANOUT, Transaction};
+use tokio::time::Instant;
+use crate::{Transaction};
 
 #[cfg(test)]
 #[path = "tests/worker_tests.rs"]
 pub mod worker_tests;
 
 /// The default channel capacity for each channel of the worker.
-pub const CHANNEL_CAPACITY: usize = 1_000_000;
 const SIG_CHANNEL_CAPACITY: usize = 250_000;
-
+const FANOUT: usize = crate::FANOUT * 2;
+pub const CHANNEL_CAPACITY: usize = SIG_CHANNEL_CAPACITY * FANOUT;
 /// The primary round number.
 // TODO: Move to the primary.
 pub type Round = u64;
@@ -146,9 +148,9 @@ impl Worker {
         let (tx_processor, rx_processor) = channel(CHANNEL_CAPACITY);
 
         let mut tx_sig_verifiers = Vec::new();
-        for _ in 0..FANOUT {
+        for tag in 0..FANOUT {
             let (tx_sig, rx_sig) = channel(SIG_CHANNEL_CAPACITY);
-            tokio::task::spawn(sig_verify(rx_sig, tx_batch_maker.clone()));
+            tokio::task::spawn(sig_verify(tag, rx_sig, tx_batch_maker.clone()));
             tx_sig_verifiers.push(tx_sig);
         }
         //  let sig_verifiers = SigVerifiersChannels::new_and_spawn(tx_batch_maker);
@@ -255,10 +257,7 @@ impl Worker {
 /// Defines how the network receiver handles incoming transactions.
 #[derive(Clone)]
 struct TxReceiverHandler {
-    //tx_batch_maker: Sender<Transaction>,
-    tx_sig_verifiers: Vec<Sender<TransactionData>>,
-    //idx: usize,
-    //sig_verifiers: SigVerifiersChannels,
+    tx_sig_verifiers: Vec<Sender<Bytes>>,
 }
 
 #[async_trait]
@@ -268,17 +267,14 @@ impl MessageHandler for TxReceiverHandler {
         // let tx : crate::Transaction = bincode::deserialize(&message).unwrap();
         // let good_sig = tx.verify();
         // debug!("SigTestVerify {}", good_sig);
-        let tx = message.to_vec();
-        let idx = tx[tx.len() - 10] as usize % FANOUT;
-        self.tx_sig_verifiers[idx % FANOUT]
-            .send(tx)
+        let idx: u8 = rand::thread_rng().gen();
+        // let tx = message.to_vec();
+        // let idx = tx[tx.len() - 10] as usize % FANOUT;
+        self.tx_sig_verifiers[idx as usize % FANOUT]
+            .send(message)
             .await
             .expect("Failed to send transaction");
-        //info!("idx {}", idx);
-        //self.sig_verifiers.send(message.to_vec()).await;
 
-        // Give the change to schedule other tasks.
-        tokio::task::yield_now().await;
         Ok(())
     }
 }
@@ -354,42 +350,22 @@ impl MessageHandler for PrimaryReceiverHandler {
     }
 }
 
-
-
-//
-// struct SigVerifiersChannels {
-//     tx_sig_verifiers: Vec<Sender<Transaction>>,
-// }
-//
-// impl SigVerifiersChannels {
-//     pub fn new_and_spawn(tx_batch_maker: Sender<Transaction>) -> Self {
-//         let mut tx_sig_verifiers = Vec::new();
-//         for _ in 0..FANOUT {
-//             let (tx_sig, rx_sig) = channel(SIG_CHANNEL_CAPACITY);
-//             tokio::task::spawn(sig_verify(rx_sig, tx_batch_maker.clone()));
-//             tx_sig_verifiers.push(tx_sig);
-//         }
-//         Self { tx_sig_verifiers }
-//     }
-//
-//     pub async fn send(&self, tx: Transaction) {
-//         let idx = tx[tx.len() - 10] as usize % FANOUT;
-//         self.tx_sig_verifiers[idx]
-//             .send(tx)
-//             .await
-//             .expect("Failed to send transaction");
-//         info!("idx {}", idx);
-//     }
-// }
-
-async fn sig_verify(mut rx_sig_verifier: Receiver<TransactionData>, tx_batch_maker: Sender<TransactionData>) {
+async fn sig_verify(tag: usize, mut rx_sig_verifier: Receiver<Bytes>, tx_batch_maker: Sender<TransactionData>) {
+    let mut count: u64 = 0;
+    let mut now = Instant::now();
     loop {
         let message = rx_sig_verifier.recv().await.unwrap();
+        let tx_data = message.to_vec();
         // format : u8, u64, u8 (serialized tx len), serialized tx, padding
-        let payload_len: u8 = bincode::deserialize(&message[(1+8) as usize .. (1+8+1) as usize]).unwrap();
-        let tx: Transaction = bincode::deserialize(&message[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
+        let payload_len: u8 = bincode::deserialize(&tx_data[(1+8) as usize .. (1+8+1) as usize]).unwrap();
+        let tx: Transaction = bincode::deserialize(&tx_data[(1+8+1) as usize .. (1+8+1+payload_len) as usize]).unwrap();
         let good_sig = tx.verify();
         // info!("tx sig {}", good_sig);
-        tx_batch_maker.send(message).await.expect("Failed to send transaction");
+        tx_batch_maker.send(tx_data).await.expect("Failed to send transaction");
+        count += 1;
+        if count % 10_000 == 0 {
+            info!("tx sig verify, tag {}, count {}, time {:?}", tag, count, now.elapsed().as_millis());
+            now = Instant::now();
+        }
     }
 }
