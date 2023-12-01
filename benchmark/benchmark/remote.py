@@ -115,21 +115,23 @@ class Bench:
         # Spawn the primary and each worker on a different machine. Each
         # authority runs in a single data center.
         else:
-            primaries = max(bench_parameters.nodes)
-
             # Ensure there are enough hosts.
             hosts = self.manager.hosts()
-            if len(hosts.keys()) < primaries:
-                return []
-            for ips in hosts.values():
-                if len(ips) < bench_parameters.workers + 1:
-                    return []
+            if len(hosts.values()) > 1:
+                raise BenchError("Can't run in more than one region.")
+
+            # if len(hosts.keys()) < primaries:
+            #     return []
+            # for ips in hosts.values():
+            #     if len(ips) < bench_parameters.workers + 1:
+            #         return []
 
             # Ensure the primary and its workers are in the same region.
-            selected = []
-            for region in list(hosts.keys())[:primaries]:
-                ips = list(hosts[region])[:bench_parameters.workers + 1]
-                selected.append(ips)
+            selected = [list(hosts.values())[0]]
+            # for region in list(hosts.keys())[:primaries]:
+            #     print(f'region: {region}')
+            #     ips = list(hosts[region])[:bench_parameters.workers + 1]
+            #     selected.append(ips)
             return selected
 
     def _background_run(self, host, command, log_file):
@@ -181,7 +183,7 @@ class Bench:
 
         # Generate configuration files.
         keys = []
-        key_files = [PathMaker.key_file(i) for i in range(len(hosts))]
+        key_files = [PathMaker.key_file(i) for i in range(bench_parameters.nodes)]
         for filename in key_files:
             cmd = CommandMaker.generate_key(filename).split()
             subprocess.run(cmd, check=True)
@@ -195,8 +197,14 @@ class Bench:
                 (x, [y] * (workers + 1)) for x, y in zip(names, hosts)
             )
         else:
+            groups_needed = len(names)
+            if len(hosts[0]) % groups_needed != 0:
+                raise BenchError("Not an even number of instances to use for nodes.")
+
+            chunk_size = len(hosts[0]) // groups_needed
+            hosts2 = [hosts[0][i:i+chunk_size] for i in range(0, len(hosts[0]), chunk_size)]
             addresses = OrderedDict(
-                (x, y) for x, y in zip(names, hosts)
+                (x, y) for x, y in zip(names, hosts2)
             )
         committee = Committee(addresses, self.settings.base_port)
         committee.print(PathMaker.committee_file())
