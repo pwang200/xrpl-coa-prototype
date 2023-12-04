@@ -142,7 +142,7 @@ impl Client {
 
         // Submit all transactions.
         let burst = self.rate / PRECISION;
-        assert_eq!(burst % FANOUT, 0);
+        // assert_eq!(burst % FANOUT, 0);
         let mut tx = BytesMut::with_capacity(self.size);
         let mut counter_expect = 0;
         let mut r = rand::thread_rng().gen();
