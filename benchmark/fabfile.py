@@ -37,7 +37,7 @@ def local(ctx, debug=True):
 
 
 @task
-def create(ctx, nodes=5):
+def create(ctx, nodes=20):
     ''' Create a testbed'''
     try:
         InstanceManager.make().create_instances(nodes)
@@ -55,7 +55,7 @@ def destroy(ctx):
 
 
 @task
-def start(ctx, max=5):
+def start(ctx, max=20):
     ''' Start at most `max` machines per data center '''
     try:
         InstanceManager.make().start_instances(max)
@@ -96,14 +96,14 @@ def remote(ctx, debug=False):
     bench_params = {
         'faults': 0,
         'nodes': 5,
-        'workers': 1,
-        'collocate': True,
-        'rate': [480_000],
+        'workers': 3,
+        'collocate': False,
+        'rate': [320_000, 640_000, 1_280_000, 1_920_000, 2_560_000],
         #'rate': [40_000, 80_000, 160_000, 360_000, 720_000],
         'tx_size': 177,
         # 'duration': 20,
         'duration': 300,
-        'batch_size': [500_000],  # bytes
+        'batch_size': [500_000, 1_000_000],  # bytes
         # 'batch_size': [1, 250_000, 500_000, 1_000_000],  # bytes
         'runs': 1,
     }

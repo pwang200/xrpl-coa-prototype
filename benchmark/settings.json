@@ -7,7 +7,7 @@
     "repo": {
         "name": "xrpl-coa-prototype",
         "url": "https://github.com/pwang200/xrpl-coa-prototype",
-        "branch": "tx-DB"
+        "branch": "tx-sig-DB-AWS"
     },
     "consensus-repo": {
         "name": "xrpl-consensus-rs",
