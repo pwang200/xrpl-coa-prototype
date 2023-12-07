@@ -98,14 +98,14 @@ def remote(ctx, debug=False):
         'nodes': 5,
         'workers': 3,
         'collocate': False,
-        'rate': [320_000, 640_000, 1_280_000, 1_920_000, 2_560_000],
+        'rate': [1_280_000],
         #'rate': [40_000, 80_000, 160_000, 360_000, 720_000],
         'tx_size': 177,
         # 'duration': 20,
         'duration': 300,
-        'batch_size': [500_000, 1_000_000],  # bytes
-        # 'batch_size': [1, 250_000, 500_000, 1_000_000],  # bytes
-        'runs': 1,
+        # 'batch_size': [500_000, 1_000_000],  # bytes
+        'batch_size': [250_000, 500_000, 1_000_000],  # bytes
+        'runs': 5,
     }
     node_params = {
         'header_size': 1_000,  # bytes
@@ -154,3 +154,8 @@ def logs(ctx):
         print(LogParser.process('./logs', faults='?').result())
     except ParseError as e:
         Print.error(BenchError('Failed to parse logs', e))
+
+
+#Change nodes parameter of create function to 20 (that's 5 primaries and 3 workers per primary)
+#Change the max parameter of start to 20 as well
+#In the remote function, change 'workers' to 3, 'collocate' to False
