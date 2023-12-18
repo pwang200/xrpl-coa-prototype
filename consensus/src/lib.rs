@@ -424,11 +424,13 @@ impl Consensus {
 
     fn get_normal_validators(&self) -> HashSet<&PublicKey> {
         let mut too_fast: HashSet<&PublicKey> = HashSet::new();
-        self.progress.iter()
-            .filter(|(r, _)| **r > self.latest_ledger.seq)
-            .for_each(|(_, pks)| too_fast.extend(pks.iter()));
+        if self.latest_ledger.seq != 0 {
+            self.progress.iter()
+                .filter(|(r, _)| **r > self.latest_ledger.seq)
+                .for_each(|(_, pks)| too_fast.extend(pks.iter()));
+        }
 
-        let too_slow: HashSet<&PublicKey> = if self.timer_count > SLOW_PEER_CUT_OFF {
+        let too_slow: HashSet<&PublicKey> = if self.timer_count > SLOW_PEER_CUT_OFF && self.latest_ledger.seq != 0 {
             let slow_cut_off = self.timer_count - SLOW_PEER_CUT_OFF;
             self.freshness.iter()
                 .filter(|&(_, &last_seen)| last_seen <= slow_cut_off)
